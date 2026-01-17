@@ -26,8 +26,8 @@ else:
     print(f"Usando directorio: {DRIVE_PATH}")
 
 # Archivos de salida
-LOG_FILE = os.path.join(DRIVE_PATH, 'training_log_Google_Close.csv')
-MODEL_FILE = os.path.join(DRIVE_PATH, 'best_model_google_Close.keras')
+LOG_FILE = os.path.join(DRIVE_PATH, 'training_log_Google_C.csv')
+MODEL_FILE = os.path.join(DRIVE_PATH, 'best_model_google_C.keras')
 
 # ---------------------------------------------------------
 # 2. DESCARGA DE DATOS
