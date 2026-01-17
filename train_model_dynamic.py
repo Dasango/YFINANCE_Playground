@@ -147,7 +147,7 @@ if __name__ == "__main__":
     parser.add_argument("--period", type=str, default="60d", help="Periodo de datos (ej: 60d, 1mo, 1y)")
     parser.add_argument("--interval", type=str, default="5m", help="Intervalo de datos (ej: 5m, 1h, 1d)")
     parser.add_argument("--look_back", type=int, default=60, help="Ventana de tiempo para la predicción")
-    parser.add_argument("--epochs", type=int, default=10, help="Número de épocas de entrenamiento")
+    parser.add_argument("--epochs", type=int, default=30, help="Número de épocas de entrenamiento")
     parser.add_argument("--batch_size", type=int, default=32, help="Tamaño del batch")
     parser.add_argument("--units", type=int, default=5, help="Unidades en las capas LSTM")
     parser.add_argument("--features", type=str, default="Close,High,Low,Open,Volume", 
