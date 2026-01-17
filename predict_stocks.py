@@ -17,7 +17,8 @@ model_configs = [
     {"name": "best_model_google_CH.keras", "features": ["Close", "High"]},
     {"name": "best_model_google_CHL.keras", "features": ["Close", "High", "Low"]},
     {"name": "best_model_google_CHLO.keras", "features": ["Close", "High", "Low", "Open"]},
-    {"name": "best_model_google_CHLOV.keras", "features": ["Close", "High", "Low", "Open", "Volume"]}
+    {"name": "best_model_google_CHLOV.keras", "features": ["Close", "High", "Low", "Open", "Volume"]},
+    {"name": "best_model_google_HLOV.keras", "features": ["High", "Low", "Open", "Volume"]}
 ]
 
 def get_latest_data(ticker, period="60d", interval="5m"):
@@ -38,39 +39,35 @@ def get_latest_data(ticker, period="60d", interval="5m"):
 def predict_with_model(model_path, df, features):
     # Seleccionar columnas necesarias
     df_features = df[features].copy()
-    
     # El valor real que queremos comparar es el último 'Close'
-    real_value = df_features['Close'].iloc[-1]
+    real_value = df['Close'].iloc[-1]
     
-    # Para la predicción, usamos los 60 pasos previos al último
-    # Es decir, desde (fin - 60 - 1) hasta (fin - 1)
+    # Para la predicción, usamos los 60 pasos previos al último (excluyendo el último)
     input_df = df_features.iloc[-(LOOK_BACK + 1):-1]
     
     if len(input_df) < LOOK_BACK:
         return None, real_value
 
     # Preprocesamiento (Escalado)
-    # Importante: Los modelos se entrenaron con un scaler fit sobre 60 días de datos.
-    # Para ser consistentes, escalamos basándonos en los datos descargados.
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    # Fit con todos los datos descargados para tener un rango similar al entrenamiento
-    scaled_full_data = scaler.fit_transform(df_features.values)
+    scaler_x = MinMaxScaler(feature_range=(0, 1))
+    scaler_y = MinMaxScaler(feature_range=(0, 1))
     
-    # Extraer la secuencia de entrada escalada
-    # La secuencia de entrada está en las últimas LOOK_BACK filas de scaled_full_data (excluyendo la última)
-    X_input = scaled_full_data[-(LOOK_BACK + 1):-1]
-    X_input = np.reshape(X_input, (1, LOOK_BACK, len(features)))
+    # Fit scaler_x con los datos de las features
+    scaler_x.fit(df[features].values)
+    # Fit scaler_y con los datos del Close (el target siempre es Close)
+    scaler_y.fit(df[['Close']].values)
+    
+    # Escalar la entrada
+    X_input_scaled = scaler_x.transform(input_df.values)
+    X_input_reshaped = np.reshape(X_input_scaled, (1, LOOK_BACK, len(features)))
     
     # Cargar modelo y predecir
     model = load_model(model_path)
-    prediction_scaled = model.predict(X_input, verbose=0)
+    prediction_scaled = model.predict(X_input_reshaped, verbose=0)
     
-    # La predicción está en la escala del 'Close' (índice 0)
-    # Para desescalar, necesitamos un array con la misma forma que el input del scaler
-    # Creamos un dummy array para el inverse_transform
-    dummy = np.zeros((1, len(features)))
-    dummy[0, 0] = prediction_scaled[0, 0]
-    prediction_unscaled = scaler.inverse_transform(dummy)[0, 0]
+    # Des-escalar la predicción usando scaler_y
+    # prediction_scaled es un array de (1, 1), inverse_transform espera (n_samples, n_features)
+    prediction_unscaled = scaler_y.inverse_transform(prediction_scaled)[0, 0]
     
     return prediction_unscaled, real_value
 
@@ -85,8 +82,11 @@ def main():
         for config in model_configs:
             model_path = os.path.join(MODELS_DIR, config["name"])
             if not os.path.exists(model_path):
-                print(f"Advertencia: No se encontró el modelo {config['name']}")
-                continue
+                # Intentar buscar en la carpeta assets/models que es donde el usuario dijo que estaban
+                model_path = os.path.join(MODELS_DIR, config["name"])
+                if not os.path.exists(model_path):
+                    print(f"Advertencia: No se encontró el modelo {config['name']}")
+                    continue
                 
             print(f"Procesando modelo: {config['name']}...")
             pred, real = predict_with_model(model_path, df, config["features"])
@@ -114,6 +114,8 @@ def main():
             
     except Exception as e:
         print(f"Ocurrió un error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
