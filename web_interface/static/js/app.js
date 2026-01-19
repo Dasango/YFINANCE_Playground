@@ -75,7 +75,7 @@ async function handleTrain(featuresStr) {
                 return;
             }
 
-            const epNum = epochKeys[currentEpochIdx];
+            const epNum = epochKeys[currentEpochIdx]; // e.g. "0", "1"
             const epData = epochs[epNum];
             const duration = 5000; // 5s total per epoch
             const steps = epData.batch.length;
@@ -107,12 +107,14 @@ async function handleTrain(featuresStr) {
 
                 // Update Main Chart (Dynamic Lines!)
                 if (currentRealData && currentPredictionData) {
+                    // Pass epNum for Chaos Phase Logic check
                     renderChart(
                         'chart-container',
                         currentRealData,
                         currentPredictionData,
                         `Pred: ${featuresStr}`,
-                        currentBatchLoss // Pass loss!
+                        currentBatchLoss,
+                        epNum
                     );
                 }
 

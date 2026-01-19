@@ -3,7 +3,7 @@
 
 let plotInstance = null;
 
-export function renderChart(containerId, realData, predictionData = null, predictionName = "Predicción", currentLoss = null) {
+export function renderChart(containerId, realData, predictionData = null, predictionName = "Predicción", currentLoss = null, currentEpoch = null) {
     const dates = realData.dates;
     const values = realData.values;
     const ticker = realData.ticker;
@@ -22,19 +22,24 @@ export function renderChart(containerId, realData, predictionData = null, predic
 
     const data = [trace1];
 
-    // Trace 3: Historical Sim (Red line below Real Data)
+    // Calculate History Sim (Continuity logic)
+    let historySimValues = null;
+    let connectPoint = null;
+
     if (currentLoss !== null) {
         const lossVal = parseFloat(currentLoss);
-        // "Epic" logic: Multiply by (1 - loss - random_noise)
-        // We scale noise by loss so it stabilizes as loss -> 0
-        // Factor = 1 - loss - (random * loss) or similar
 
-        const historySimValues = values.map(v => {
-            // Noise up to 100% of loss value (e.g. if loss 0.5, noise 0..0.5)
+        // History Trace: User LIKES noise here.
+        // Factor = 1 - loss - noise
+        historySimValues = values.map(v => {
+            // Noise proportional to loss
             const noise = Math.random() * lossVal;
             const factor = 1 - lossVal - noise;
             return v * factor;
         });
+
+        // The last point of history sim determines where prediction starts
+        connectPoint = historySimValues[historySimValues.length - 1];
 
         const traceHistory = {
             x: dates,
@@ -51,27 +56,53 @@ export function renderChart(containerId, realData, predictionData = null, predic
         data.push(traceHistory);
     }
 
-    // Trace 2: Prediction (if exists)
+    // Trace 2: Prediction (Future)
     if (predictionData) {
-        // Apply scaling/noise to prediction as well
-        let predValues = predictionData.values;
+        let predValues;
+        const targetValues = predictionData.values;
 
-        if (currentLoss !== null) {
+        if (currentLoss !== null && connectPoint !== null) {
             const lossVal = parseFloat(currentLoss);
-            predValues = predValues.map(v => {
-                const noise = Math.random() * lossVal;
-                const factor = 1 - lossVal - noise;
-                return v * factor;
+
+            // "Unfolding" Effect + Conditional Noise
+
+            // 1. Unfolding Factor (0 = Flat, 1 = Full Shape)
+            // Multiplier 150: Requires loss < 0.006 to be fully unfolded.
+            // This makes it stay "low/flat" much longer and rise slowly.
+            const shapeFactor = Math.max(0, Math.min(1, 1 - (lossVal * 150)));
+
+            const targetStart = targetValues[0];
+
+            predValues = targetValues.map(v => {
+                // Base Shape (Unfolded)
+                const delta = v - targetStart;
+                let val = connectPoint + (delta * shapeFactor);
+
+                // 2. Conditional Noise
+                // "mete el ruido aleatorio por lo menos que el loss sea menor que 0.0002"
+                if (lossVal >= 0.0002) {
+                    // Noise magnitude proportional to loss
+                    const noiseMag = lossVal * (values[values.length - 1] * 0.01);
+                    // Increased noise factor to 25 for "more erratic"
+                    const rnd = (Math.random() - 0.5) * noiseMag * 25;
+                    val += rnd;
+                }
+
+                return val;
             });
+
+        } else {
+            // Standard/Final View
+            predValues = targetValues;
         }
 
         const trace2 = {
             x: predictionData.dates,
-            y: predValues, // Use scaled values
+            y: predValues,
             mode: 'lines',
             name: predictionName,
             line: {
-                color: '#ef4444', // red-500
+                color: '#ef4444',
                 width: 2,
                 dash: 'dot'
             }
@@ -104,7 +135,6 @@ export function renderChart(containerId, realData, predictionData = null, predic
 
     const config = { responsive: true, displayModeBar: false };
 
-    // Use react for efficient updates
     Plotly.react(containerId, data, layout, config);
 }
 
@@ -116,9 +146,9 @@ export function renderTrainingChart(containerId, xValues, yValues, epochNum, cur
         line: {
             color: '#f59e0b', // amber-500
             width: 2,
-            shape: 'spline' // smooth curve
+            shape: 'spline'
         },
-        fill: 'tozeroy', // Optional: fill under line for cool effect
+        fill: 'tozeroy',
         fillcolor: 'rgba(245, 158, 11, 0.1)'
     };
 
@@ -136,7 +166,7 @@ export function renderTrainingChart(containerId, xValues, yValues, epochNum, cur
             showgrid: false,
             zeroline: false,
             showticklabels: false,
-            fixedrange: false // Allow zoom/pan/autoscale
+            fixedrange: false
         },
         yaxis: {
             showgrid: false,
@@ -146,7 +176,6 @@ export function renderTrainingChart(containerId, xValues, yValues, epochNum, cur
         }
     };
 
-    // Removed staticPlot: true to avoid rendering issues with updates
     const config = { responsive: true, displayModeBar: false };
 
     Plotly.react(containerId, [trace], layout, config);
