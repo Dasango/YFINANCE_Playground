@@ -61,7 +61,51 @@ export function renderChart(containerId, realData, predictionData = null, predic
         margin: { t: 40, r: 20, l: 40, b: 40 }
     };
 
-    const config = { responsive: true };
+    const config = { responsive: true, displayModeBar: false };
 
     Plotly.newPlot(containerId, data, layout, config);
+}
+
+export function renderTrainingChart(containerId, xValues, yValues, epochNum, currentLoss) {
+    const trace = {
+        x: xValues,
+        y: yValues,
+        mode: 'lines',
+        line: {
+            color: '#f59e0b', // amber-500
+            width: 2,
+            shape: 'spline' // smooth curve
+        },
+        fill: 'tozeroy', // Optional: fill under line for cool effect
+        fillcolor: 'rgba(245, 158, 11, 0.1)'
+    };
+
+    const lossText = currentLoss !== undefined ? ` | Loss: ${Number(currentLoss).toFixed(5)}` : '';
+
+    const layout = {
+        title: {
+            text: `Epoch ${epochNum}${lossText}`,
+            font: { color: '#ffffff', size: 14 }
+        },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { t: 30, r: 10, l: 30, b: 20 },
+        xaxis: {
+            showgrid: false,
+            zeroline: false,
+            showticklabels: false,
+            fixedrange: false // Allow zoom/pan/autoscale
+        },
+        yaxis: {
+            showgrid: false,
+            zeroline: false,
+            showticklabels: false,
+            fixedrange: false
+        }
+    };
+
+    // Removed staticPlot: true to avoid rendering issues with updates
+    const config = { responsive: true, displayModeBar: false };
+
+    Plotly.react(containerId, [trace], layout, config);
 }

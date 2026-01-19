@@ -15,6 +15,7 @@ PROJECT_ROOT = os.path.dirname(BASE_DIR)
 ASSETS_DIR = os.path.join(PROJECT_ROOT, 'assets')
 DATA_DIR = os.path.join(ASSETS_DIR, 'real_data')
 PREDICTS_DIR = os.path.join(ASSETS_DIR, 'predicts')
+LOGS_DIR = os.path.join(ASSETS_DIR, 'logs')
 
 # CORS (Permitir todo para desarrollo local)
 app.add_middleware(
@@ -103,6 +104,32 @@ def get_prediction(features: str):
         }
     except Exception as e:
          raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/logs/{features}")
+def get_training_logs(features: str):
+    """
+    Retorna los logs de entrenamiento para la combinación dada.
+    Formato CSV: step,epoch,batch,loss
+    """
+    search_pattern = os.path.join(LOGS_DIR, f"*_{features}.csv")
+    files = glob.glob(search_pattern)
+    
+    if not files:
+        raise HTTPException(status_code=404, detail=f"Logs for features '{features}' not found")
+    
+    file_path = files[0]
+    try:
+        df = pd.read_csv(file_path)
+        # columns: step,epoch,batch,loss
+        return {
+            "epoch": df["epoch"].tolist(),
+            "batch": df["batch"].tolist(),
+            "loss": df["loss"].tolist(),
+            "step": df["step"].tolist(),
+            "model_name": os.path.basename(file_path).replace(".csv", "")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Montar archivos estáticos (Frontend)
 static_dir = os.path.join(BASE_DIR, "static")
