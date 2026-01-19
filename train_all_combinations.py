@@ -1,6 +1,7 @@
 import os
 import argparse
 import itertools
+import shutil
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -47,15 +48,35 @@ def get_all_combinations(features):
         combinations.extend(itertools.combinations(features, r))
     return combinations
 
+def clear_directory_content(directory):
+    if not os.path.exists(directory):
+        return
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print(f'No se pudo borrar {file_path}. Razón: {e}')
+
 # ---------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------
 def main(args):
     # Dirs
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(base_dir, 'assets', 'real_data')
-    models_dir = os.path.join(base_dir, 'assets', 'models')
-    logs_dir = os.path.join(base_dir, 'assets', 'logs')
+    assets_dir = os.path.join(base_dir, 'assets')
+    data_dir = os.path.join(assets_dir, 'real_data')
+    models_dir = os.path.join(assets_dir, 'models')
+    logs_dir = os.path.join(assets_dir, 'logs')
+    
+    # Limpiar directorios antes de empezar
+    print("--- Limpiando directorios de assets ---")
+    clear_directory_content(data_dir)
+    clear_directory_content(models_dir)
+    clear_directory_content(logs_dir)
     
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(models_dir, exist_ok=True)
