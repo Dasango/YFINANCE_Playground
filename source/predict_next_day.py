@@ -132,48 +132,63 @@ def main():
         except ValueError:
             close_idx = -1
             
+        # Calcular volatilidad histórica (desviación estándar de los cambios) surte 'Close'
+        step_std = df['Close'].diff().std()
+        # Si es NaN (ej: data muy corta), usar 0
+        if np.isnan(step_std):
+            step_std = 0.0
+
         while curr_time <= end_time:
             # Predecir
             # current_batch shape: (1, 30, n_features)
             pred_scaled = model.predict(current_batch, verbose=0)
             pred_val = scaler_y.inverse_transform(pred_scaled)[0][0]
             
+            # --- Inyectar Ruido Estocástico ---
+            # Random Walk: La predicción es la media, añadimos varianza real
+            noise = np.random.normal(0, step_std)
+            pred_val += noise
+            
             # Guardar si toca (todos los pasos de 5m)
-            # El usuario pide: todos los minutos (ya no saltar de 20 en 20)
-            # Mantenemos filtro de hora >= 4:00 si es necesario por continuidad visual
             if curr_time.hour >= 4:
                 predictions.append((curr_time, pred_val))
             
             # Actualizar ventana deslizante
             # Nuevo input row:
-            # Tomamos la última fila usada
             last_row_scaled = current_batch[0, -1, :].copy()
             
-            # Heurística: Si Close cambia, mover High/Low/Open en la misma proporción (diferencia)
+            # Heurística + Ruido: Usamos el valor con ruido para la recursión
             if close_idx != -1:
                 old_close = last_row_scaled[close_idx]
-                new_close = pred_scaled[0][0]
-                diff = new_close - old_close
+                
+                # Necesitamos el valor escalado del NUEVO precio (con ruido)
+                # Transformamos de vuelta manualmente: (val - min) / (max - min)
+                # O usamos el scaler (más lento pero seguro)
+                # scaler_y espera shape (n_samples, 1)
+                
+                # Optimizacion: calcular diff en escala original o re-escalar
+                # Re-escalamos el pred_val ruidoso
+                new_close_scaled = scaler_y.transform([[pred_val]])[0][0]
+                
+                diff_scaled = new_close_scaled - old_close
                 
                 # Actualizar Close
-                last_row_scaled[close_idx] = new_close
+                last_row_scaled[close_idx] = new_close_scaled
                 
-                # Actualizar otros precios relacionados
+                # Actualizar otros precios relacionados con el mismo delta ESCALADO
+                # Nota: Esto asume que los scalers de High/Low son similares al de Close,
+                # lo cual es cierto (MinMax sobre todo el dataset suele ser parecido).
                 for price_feat in ["High", "Low", "Open"]:
                     if price_feat in features:
                         f_idx = features.index(price_feat)
-                        last_row_scaled[f_idx] += diff
-            
-            # Los otros features (ej: Volume) se mantienen constantes (Naive)
+                        last_row_scaled[f_idx] += diff_scaled
             
             # Desplazar y añadir
-            # current_batch: (1, 30, n_features)
-            # new_batch = concat( old[1:], new_row )
             new_row_reshaped = last_row_scaled.reshape(1, 1, -1)
             current_batch = np.concatenate([current_batch[:, 1:, :], new_row_reshaped], axis=1)
             
             # Avanzar tiempo
-            curr_time += timedelta(minutes=5) # 5m interval assumption
+            curr_time += timedelta(minutes=5)
             
         # Guardar CSV
         if predictions:
