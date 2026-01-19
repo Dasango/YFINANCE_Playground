@@ -3,6 +3,7 @@ import { initControls } from './controls_component.js';
 
 // State
 let currentRealData = null;
+let currentPredictionData = null; // Store fetched prediction
 let animationInterval = null;
 
 const API_BASE = "http://127.0.0.1:8000/api";
@@ -46,8 +47,15 @@ async function handleTrain(featuresStr) {
 
         const epochKeys = Object.keys(epochs).sort((a, b) => a - b);
 
-        // Mostrar predicción INMEDIATAMENTE
-        showPrediction(featuresStr);
+        // 1.1 Fetch Prediction Data EARLY (to use in loop)
+        try {
+            const predResponse = await fetch(`${API_BASE}/predict/${featuresStr}`);
+            if (predResponse.ok) {
+                currentPredictionData = await predResponse.json();
+            } else {
+                console.warn("Prediction not found early");
+            }
+        } catch (e) { console.error("Error fetching prediction early", e); }
 
         // Global arrays (acumulados para "anidar" datos)
         const allBatches = [];
@@ -60,6 +68,10 @@ async function handleTrain(featuresStr) {
         async function playEpoch() {
             if (currentEpochIdx >= epochKeys.length) {
                 statusEl.textContent = "Entrenamiento finalizado.";
+                // Final render with full opacity (loss ~0 or explicit call without loss scaling?)
+                // If we want to stay "scaled", we use last known loss. 
+                // If we want to show 'true' prediction at end, call without loss arg.
+                renderChart('chart-container', currentRealData, currentPredictionData, `Pred: ${featuresStr}`);
                 return;
             }
 
@@ -90,8 +102,20 @@ async function handleTrain(featuresStr) {
                 allBatches.push(globalStepCounter++);
                 allLosses.push(currentBatchLoss);
 
-                // CRITICAL FIX: Pass COPIES of arrays to force Plotly update
+                // Update Training Chart
                 renderTrainingChart('training-chart', [...allBatches], [...allLosses], epNum, currentBatchLoss);
+
+                // Update Main Chart (Dynamic Lines!)
+                if (currentRealData && currentPredictionData) {
+                    renderChart(
+                        'chart-container',
+                        currentRealData,
+                        currentPredictionData,
+                        `Pred: ${featuresStr}`,
+                        currentBatchLoss // Pass loss!
+                    );
+                }
+
                 currentStep++;
 
             }, stepTime);
@@ -102,21 +126,10 @@ async function handleTrain(featuresStr) {
     } catch (e) {
         console.error(e);
         statusEl.textContent = "Error iniciando entrenamiento/logs: " + e.message;
-        // Fallback to show prediction directly if logs fail?
-        showPrediction(featuresStr);
-    }
-}
-
-async function showPrediction(featuresStr) {
-    try {
-        const response = await fetch(`${API_BASE}/predict/${featuresStr}`);
-        if (!response.ok) {
-            console.error("No se encontró predicción");
-            return;
+        if (currentPredictionData) {
+            renderChart('chart-container', currentRealData, currentPredictionData, `Pred: ${featuresStr}`);
         }
-        const predData = await response.json();
-        renderChart('chart-container', currentRealData, predData, `Pred: ${featuresStr}`);
-    } catch (e) { console.error(e); }
+    }
 }
 
 function handleStop() {
@@ -127,7 +140,7 @@ function handleStop() {
     }
     document.getElementById('training-chart').style.display = 'none';
 
-    // Clear prediction from chart
+    // Reset charts (clean view)
     renderChart('chart-container', currentRealData);
     document.getElementById('status-text').textContent = "Visualización detenida.";
 }

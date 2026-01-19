@@ -3,7 +3,7 @@
 
 let plotInstance = null;
 
-export function renderChart(containerId, realData, predictionData = null, predictionName = "Predicción") {
+export function renderChart(containerId, realData, predictionData = null, predictionName = "Predicción", currentLoss = null) {
     const dates = realData.dates;
     const values = realData.values;
     const ticker = realData.ticker;
@@ -22,11 +22,39 @@ export function renderChart(containerId, realData, predictionData = null, predic
 
     const data = [trace1];
 
+    // Scale factor based on loss (if training)
+    // If loss is e.g. 0.05, factor is 0.95. The line is 95% of height.
+    const scaleFactor = currentLoss !== null ? (1 - parseFloat(currentLoss)) : 1;
+
+    // Trace 3: Historical Sim (Red line below Real Data)
+    if (currentLoss !== null) {
+        // Same x as real data, y scaled
+        const historySimValues = values.map(v => v * scaleFactor);
+        const traceHistory = {
+            x: dates,
+            y: historySimValues,
+            mode: 'lines',
+            name: 'Training Sim',
+            line: {
+                color: '#ef4444',
+                width: 2,
+                dash: 'dot'
+            },
+            showlegend: false // Optional, maybe clutter
+        };
+        data.push(traceHistory);
+    }
+
     // Trace 2: Prediction (if exists)
     if (predictionData) {
+        // Apply scaling to prediction as well
+        const predValues = currentLoss !== null
+            ? predictionData.values.map(v => v * scaleFactor)
+            : predictionData.values;
+
         const trace2 = {
             x: predictionData.dates,
-            y: predictionData.values,
+            y: predValues, // Use scaled values
             mode: 'lines',
             name: predictionName,
             line: {
@@ -63,7 +91,8 @@ export function renderChart(containerId, realData, predictionData = null, predic
 
     const config = { responsive: true, displayModeBar: false };
 
-    Plotly.newPlot(containerId, data, layout, config);
+    // Use react for efficient updates
+    Plotly.react(containerId, data, layout, config);
 }
 
 export function renderTrainingChart(containerId, xValues, yValues, epochNum, currentLoss) {
