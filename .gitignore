@@ -154,6 +154,5 @@ cython_debug/
 
 # Project Specific
 assets/*.csv
-assets/logs/
 assets/models/*.keras
 *.log

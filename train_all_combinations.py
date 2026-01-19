@@ -191,7 +191,7 @@ def main(args):
             epochs=args.epochs,
             batch_size=args.batch_size,
             callbacks=[csv_logger, checkpoint],
-            verbose=0 # Less noise
+            verbose=1 # Show progress
         )
         print(f"   -> Guardado en {model_file}")
 
@@ -201,10 +201,10 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", type=str, default="BTC-USD", help="Ticker symbol (default: BTC-USD)")
     parser.add_argument("--period", type=str, default="60d")
     parser.add_argument("--interval", type=str, default="5m")
-    parser.add_argument("--look_back", type=int, default=60)
+    parser.add_argument("--look_back", type=int, default=30)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=20)
-    parser.add_argument("--units", type=int, default=50) # Default units wasn't specified, picking reasonable default or similar to prev
+    parser.add_argument("--units", type=int, default=30) # Default units wasn't specified, picking reasonable default or similar to prev
     
     args = parser.parse_args()
     main(args)
