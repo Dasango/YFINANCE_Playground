@@ -6,7 +6,7 @@ let currentRealData = null;
 let currentPredictionData = null; // Store fetched prediction
 let animationInterval = null;
 
-const API_BASE = "http://127.0.0.1:8000/api";
+const API_BASE = "/api";
 
 async function loadRealData() {
     try {
