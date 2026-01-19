@@ -8,7 +8,8 @@ from tensorflow.keras.models import load_model
 
 # Configuración
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+ASSETS_DIR = os.path.join(PROJECT_ROOT, 'assets')
 DATA_DIR = os.path.join(ASSETS_DIR, 'real_data')
 MODELS_DIR = os.path.join(ASSETS_DIR, 'models')
 PREDICTS_DIR = os.path.join(ASSETS_DIR, 'predicts')
@@ -137,13 +138,11 @@ def main():
             pred_scaled = model.predict(current_batch, verbose=0)
             pred_val = scaler_y.inverse_transform(pred_scaled)[0][0]
             
-            # Guardar si toca (cada 20 min comenzando a las 04:00)
-            # El usuario pide: 04:00, 04:20, ...
-            # Verificamos si los minutos son 0, 20, 40
-            if curr_time.minute % 20 == 0 and curr_time.second == 0:
-                # Además verificar si estamos >= 04:00 si es el primer día
-                if curr_time.hour >= 4:
-                   predictions.append((curr_time, pred_val))
+            # Guardar si toca (todos los pasos de 5m)
+            # El usuario pide: todos los minutos (ya no saltar de 20 en 20)
+            # Mantenemos filtro de hora >= 4:00 si es necesario por continuidad visual
+            if curr_time.hour >= 4:
+                predictions.append((curr_time, pred_val))
             
             # Actualizar ventana deslizante
             # Nuevo input row:
