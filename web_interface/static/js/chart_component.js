@@ -22,14 +22,20 @@ export function renderChart(containerId, realData, predictionData = null, predic
 
     const data = [trace1];
 
-    // Scale factor based on loss (if training)
-    // If loss is e.g. 0.05, factor is 0.95. The line is 95% of height.
-    const scaleFactor = currentLoss !== null ? (1 - parseFloat(currentLoss)) : 1;
-
     // Trace 3: Historical Sim (Red line below Real Data)
     if (currentLoss !== null) {
-        // Same x as real data, y scaled
-        const historySimValues = values.map(v => v * scaleFactor);
+        const lossVal = parseFloat(currentLoss);
+        // "Epic" logic: Multiply by (1 - loss - random_noise)
+        // We scale noise by loss so it stabilizes as loss -> 0
+        // Factor = 1 - loss - (random * loss) or similar
+
+        const historySimValues = values.map(v => {
+            // Noise up to 100% of loss value (e.g. if loss 0.5, noise 0..0.5)
+            const noise = Math.random() * lossVal;
+            const factor = 1 - lossVal - noise;
+            return v * factor;
+        });
+
         const traceHistory = {
             x: dates,
             y: historySimValues,
@@ -40,17 +46,24 @@ export function renderChart(containerId, realData, predictionData = null, predic
                 width: 2,
                 dash: 'dot'
             },
-            showlegend: false // Optional, maybe clutter
+            showlegend: false
         };
         data.push(traceHistory);
     }
 
     // Trace 2: Prediction (if exists)
     if (predictionData) {
-        // Apply scaling to prediction as well
-        const predValues = currentLoss !== null
-            ? predictionData.values.map(v => v * scaleFactor)
-            : predictionData.values;
+        // Apply scaling/noise to prediction as well
+        let predValues = predictionData.values;
+
+        if (currentLoss !== null) {
+            const lossVal = parseFloat(currentLoss);
+            predValues = predValues.map(v => {
+                const noise = Math.random() * lossVal;
+                const factor = 1 - lossVal - noise;
+                return v * factor;
+            });
+        }
 
         const trace2 = {
             x: predictionData.dates,
