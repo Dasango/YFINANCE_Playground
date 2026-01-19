@@ -149,13 +149,22 @@ def main():
             # Tomamos la última fila usada
             last_row_scaled = current_batch[0, -1, :].copy()
             
-            # Reemplazar el valor de Close (predicción) SI EXISTE en los features
+            # Heurística: Si Close cambia, mover High/Low/Open en la misma proporción (diferencia)
             if close_idx != -1:
-                # pred_scaled is (1,1)
-                last_row_scaled[close_idx] = pred_scaled[0][0]
+                old_close = last_row_scaled[close_idx]
+                new_close = pred_scaled[0][0]
+                diff = new_close - old_close
+                
+                # Actualizar Close
+                last_row_scaled[close_idx] = new_close
+                
+                # Actualizar otros precios relacionados
+                for price_feat in ["High", "Low", "Open"]:
+                    if price_feat in features:
+                        f_idx = features.index(price_feat)
+                        last_row_scaled[f_idx] += diff
             
-            # Los otros features (High, Vol, etc.) se mantienen constantes (Naive assumption)
-            # Si Close no está, todo el vector es constante.
+            # Los otros features (ej: Volume) se mantienen constantes (Naive)
             
             # Desplazar y añadir
             # current_batch: (1, 30, n_features)
