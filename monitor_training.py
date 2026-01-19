@@ -4,6 +4,7 @@ import plotly.express as px
 import os
 import time
 
+
 # Configuración de rutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOGS_DIR = os.path.join(BASE_DIR, 'assets', 'logs')
@@ -83,10 +84,8 @@ def update_chart():
     except Exception as e:
         return px.line(), str(e)
 
-with gr.Blocks(
-    title="Monitor de Entrenamiento",
-    theme=gr.themes.Default(primary_hue="emerald", secondary_hue="slate")
-) as demo:
+def create_monitor_ui():
+    """Crea y retorna los componentes de la interfaz del monitor."""
     with gr.Column(elem_id="main-container"):
         gr.Markdown("""
         # 🚀 Model Training Monitor
@@ -105,15 +104,30 @@ with gr.Blocks(
     timer = gr.Timer(0.5)
     timer.tick(update_chart, outputs=[plot, status])
     
-    # CSS para el look premium (Ajustado para el gráfico blanco)
-    demo.css = """
-        #main-container { padding: 20px; background-color: #f8f9fa; color: #1a1a1b; border-radius: 15px; border: 1px solid #ddd; }
-        .gradio-container { background-color: #ffffff !important; }
-        footer { display: none !important; }
-    """
-    
     # Carga inicial
-    demo.load(update_chart, outputs=[plot, status])
+    # Note: In newer Gradio versions, we might need to handle this differently if not in Blocks directly, 
+    # but timer should trigger it. Adding a load event manually if needed.
+    # However, create_monitor_ui is intended to be called inside a Blocks context.
+    # We can't use demo.load here because demo is not defined. 
+    # We can rely on the Timer to start updates, or use a load on the component?
+    # gr.Plot doesn't have a load event. 
+    # Leaving it to the timer is fine for now, or the parent can handle load.
+    
+    return plot, status
 
 if __name__ == "__main__":
+    with gr.Blocks(
+        title="Monitor de Entrenamiento",
+        theme=gr.themes.Default(primary_hue="emerald", secondary_hue="slate")
+    ) as demo:
+        create_monitor_ui()
+        
+        # CSS para el look premium (Ajustado para el gráfico blanco)
+        demo.css = """
+            #main-container { padding: 20px; background-color: #f8f9fa; color: #1a1a1b; border-radius: 15px; border: 1px solid #ddd; }
+            .gradio-container { background-color: #ffffff !important; }
+            footer { display: none !important; }
+        """
+        
     demo.launch(server_port=7861)
+
