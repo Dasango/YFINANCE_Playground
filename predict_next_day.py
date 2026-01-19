@@ -129,10 +129,7 @@ def main():
         try:
             close_idx = features.index("Close")
         except ValueError:
-            print("Este modelo no usa 'Close' como input, no podemos hacer recursión simple. Saltando.")
-            # Si 'Close' no está en los features, no podemos actualizar la ventana deslizante
-            # usando la predicción (que es Close).
-            continue
+            close_idx = -1
             
         while curr_time <= end_time:
             # Predecir
@@ -153,13 +150,13 @@ def main():
             # Tomamos la última fila usada
             last_row_scaled = current_batch[0, -1, :].copy()
             
-            # Reemplazar el valor de Close (predicción)
-            # PERO OJO: pred_scaled is (1,1). We need scalar.
-            # last_row_scaled is normalized. pred_scaled is normalized. Perfect.
-            last_row_scaled[close_idx] = pred_scaled[0][0]
+            # Reemplazar el valor de Close (predicción) SI EXISTE en los features
+            if close_idx != -1:
+                # pred_scaled is (1,1)
+                last_row_scaled[close_idx] = pred_scaled[0][0]
             
             # Los otros features (High, Vol, etc.) se mantienen constantes (Naive assumption)
-            # Esto es lo único posible sin modelos multivariados vectoriales.
+            # Si Close no está, todo el vector es constante.
             
             # Desplazar y añadir
             # current_batch: (1, 30, n_features)
