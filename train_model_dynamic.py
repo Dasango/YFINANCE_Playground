@@ -11,18 +11,33 @@ from tensorflow.keras.callbacks import Callback, ModelCheckpoint
 # ---------------------------------------------------------
 # CALLBACK PERSONALIZADO PARA LOGS
 # ---------------------------------------------------------
+import time
+
 class RobustCSVLogger(Callback):
-    def __init__(self, filename):
+    def __init__(self, filename, delay=0):
         super(RobustCSVLogger, self).__init__()
         self.filename = filename
+        self.delay = delay
+        self.current_epoch = 0
+        self.global_step = 0
 
     def on_train_begin(self, logs=None):
-        self._write_line("epoch,loss", mode='w')
+        # step,epoch,batch,loss
+        self._write_line("step,epoch,batch,loss", mode='w')
 
-    def on_epoch_end(self, epoch, logs=None):
+    def on_epoch_begin(self, epoch, logs=None):
+        self.current_epoch = epoch + 1
+
+    def on_batch_end(self, batch, logs=None):
+        self.global_step += 1
         logs = logs or {}
-        loss = logs.get('loss')
-        self._write_line(f"{epoch + 1},{loss:.5f}", mode='a')
+        loss = logs.get('loss', 0)
+        # Log batch-level progress
+        self._write_line(f"{self.global_step},{self.current_epoch},{batch + 1},{loss:.5f}", mode='a')
+        
+        # Opcional: Ralentizar el entrenamiento para visualización
+        if self.delay > 0:
+            time.sleep(self.delay)
 
     def _write_line(self, line, mode):
         try:
@@ -111,7 +126,7 @@ def train_model(args):
     model.compile(optimizer='adam', loss='mean_squared_error')
     
     # 4. Callbacks
-    csv_logger = RobustCSVLogger(log_file)
+    csv_logger = RobustCSVLogger(log_file, delay=args.delay)
     checkpoint = ModelCheckpoint(
         model_file,
         monitor='loss',
@@ -153,6 +168,7 @@ if __name__ == "__main__":
     parser.add_argument("--features", type=str, default="Close,High,Low,Open,Volume", 
                         help="Lista de columnas separadas por coma (ej: Close,High)")
     parser.add_argument("--suffix", type=str, default="custom", help="Sufijo para identificar el modelo en los archivos")
+    parser.add_argument("--delay", type=float, default=0, help="Segundos de espera por cada batch (ej: 0.1)")
     
     args = parser.parse_args()
      
