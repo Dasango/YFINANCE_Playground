@@ -46,28 +46,20 @@ def load_resources():
 
     print("Leyendo CSV y limpiando cabeceras extra de yfinance...")
     
-    # --- LA CORRECCIÓN CLAVE ---
-    # header=0: Usa la primera línea ("Price, Close...") como nombres de columna.
-    # skiprows=[1, 2]: SALTA las líneas que dicen "Ticker" y "Datetime".
     df = pd.read_csv(CSV_PATH, header=0, skiprows=[1, 2])
 
-    # En tu CSV, la columna de fecha quedó bajo el nombre "Price" (la primera columna)
     if 'Price' in df.columns:
         df.rename(columns={'Price': 'datetime'}, inplace=True)
     
-    # Si por alguna razón yfinance cambió el formato y dice "Date"
     if 'Date' in df.columns:
         df.rename(columns={'Date': 'datetime'}, inplace=True)
 
-    # Convertir a fecha real (UTC para que coincida con yfinance)
     df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
     
-    # Asegurarnos de que los datos sean números (float)
     cols_datos = ['Open', 'High', 'Low', 'Close', 'Volume']
     for col in cols_datos:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Ordenar por tiempo (vital para LSTM)
     df = df.sort_values('datetime')
     
     return model, scaler, df
