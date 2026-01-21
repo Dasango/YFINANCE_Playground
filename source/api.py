@@ -23,15 +23,8 @@ def get_data():
         return {"error": "File not found"}
     
     try:
-        # Read CSV skipping the Ticker and Datetime non-header rows
-        # Row 0: Headers (Price, Close, High...)
-        # Row 1: Ticker info -> Skip
-        # Row 2: Datetime,,, -> Skip
         df = pd.read_csv(CSV_PATH, header=0, skiprows=[1, 2])
         
-        # Rename the first column 'Price' to 'datetime' as it contains the timestamps
-        # The 'Price' header is actually the label for the column index in yfinance, 
-        # but it sits over the index column in the CSV.
         if 'Price' in df.columns:
             df.rename(columns={'Price': 'datetime'}, inplace=True)
             

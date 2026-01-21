@@ -153,6 +153,4 @@ cython_debug/
 .vscode/
 
 # Project Specific
-assets/*.csv
-assets/models/*.keras
 *.log
