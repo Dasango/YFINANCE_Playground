@@ -14,8 +14,8 @@ import joblib
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Ajusta estas rutas según tu estructura
 CSV_PATH = os.path.join(BASE_DIR, 'assets', 'data', 'BTC-USD_data.csv')
-MODEL_PATH = os.path.join(BASE_DIR, 'assets', 'models', 'BTC-USD_best_model_pro.keras')
-SCALER_PATH = os.path.join(BASE_DIR, 'assets', 'models', 'scaler_BTC-USD.gz')
+MODEL_PATH = os.path.join(BASE_DIR, 'assets', 'models', 'BTC-USD_best_model_multi.keras')
+SCALER_PATH = os.path.join(BASE_DIR, 'assets', 'models', 'BTC-USD_scaler.gz')
 
 # Hiperparámetros (¡AJUSTA ESTO A TU ENTRENAMIENTO ORIGINAL!)
 SEQUENCE_LENGTH = 60  # Cuántos minutos atrás mira el modelo para predecir
@@ -32,22 +32,42 @@ global_state = {
 # --- FUNCIONES DE UTILIDAD ---
 
 def load_resources():
-    """Carga el modelo, el scaler y los datos iniciales."""
     if not os.path.exists(MODEL_PATH) or not os.path.exists(CSV_PATH):
-        raise FileNotFoundError("Modelo o CSV no encontrados.")
+        raise FileNotFoundError("Faltan archivos (modelo o csv).")
     
+    print(f"Cargando modelo desde {MODEL_PATH}...")
     model = load_model(MODEL_PATH)
-    # Asumimos que tienes el scaler guardado. Si no, el modelo no entenderá los datos crudos.
-    try:
+    
+    print(f"Cargando scaler desde {SCALER_PATH}...")
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
         scaler = joblib.load(SCALER_PATH)
-    except:
-        print("ADVERTENCIA: No se encontró scaler.pkl. Usando datos crudos (probablemente fallará).")
-        scaler = None
 
-    df = pd.read_csv(CSV_PATH)
-    # Limpieza básica
-    if 'Price' in df.columns: df.rename(columns={'Price': 'datetime'}, inplace=True)
+    print("Leyendo CSV y limpiando cabeceras extra de yfinance...")
+    
+    # --- LA CORRECCIÓN CLAVE ---
+    # header=0: Usa la primera línea ("Price, Close...") como nombres de columna.
+    # skiprows=[1, 2]: SALTA las líneas que dicen "Ticker" y "Datetime".
+    df = pd.read_csv(CSV_PATH, header=0, skiprows=[1, 2])
+
+    # En tu CSV, la columna de fecha quedó bajo el nombre "Price" (la primera columna)
+    if 'Price' in df.columns:
+        df.rename(columns={'Price': 'datetime'}, inplace=True)
+    
+    # Si por alguna razón yfinance cambió el formato y dice "Date"
+    if 'Date' in df.columns:
+        df.rename(columns={'Date': 'datetime'}, inplace=True)
+
+    # Convertir a fecha real (UTC para que coincida con yfinance)
     df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
+    
+    # Asegurarnos de que los datos sean números (float)
+    cols_datos = ['Open', 'High', 'Low', 'Close', 'Volume']
+    for col in cols_datos:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Ordenar por tiempo (vital para LSTM)
     df = df.sort_values('datetime')
     
     return model, scaler, df
