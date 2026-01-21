@@ -11,31 +11,37 @@ const App: React.FC = () => {
       <Header />
       <TickerBar />
 
-      {/* 1. Main Content: Quitamos el scroll de aquí para que el flex funcione */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      {/* Main Content Area */}
+      <div className="flex flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex-col lg:flex-row">
 
-        {/* 2. Left Column: Cambiamos a h-full y min-h-0 */}
-        <div className="flex flex-col flex-1 h-full min-h-0 border-r border-[#2B3139]">
+        {/* Left Column: Chart + Tabs */}
+        {/* Mobile: h-auto (scrolls with parent), Desktop: h-full (constrained) */}
+        <div className="flex flex-col flex-1 lg:h-full lg:min-h-0 border-r border-[#2B3139]">
 
-          {/* Chart: Flex 3, pero permitimos que se achique con min-h-0 */}
-          <div className="flex-[3] min-h-0 border-b border-[#2B3139] relative">
+          {/* Chart Container */}
+          {/* Mobile: Fixed height, Desktop: Flexible 3/5 */}
+          <div className="h-[450px] shrink-0 border-b border-[#2B3139] relative lg:h-auto lg:flex-[3] lg:min-h-0">
             <Chart />
           </div>
 
-          {/* Tabs: Flex 2, con su propio scroll interno si es necesario */}
-          <div className="flex-[2] min-h-0 overflow-y-auto">
+          {/* Tabs Container */}
+          {/* Mobile: Fixed min-height, Desktop: Flexible 2/5 */}
+          <div className="min-h-[400px] bg-[#161A1E] lg:h-auto lg:flex-[2] lg:min-h-0 lg:overflow-y-auto">
             <UserTabs />
           </div>
         </div>
 
-        {/* 3. Right Column: Order Form Desktop */}
-        <div className="w-[320px] hidden lg:block h-full overflow-y-auto border-l border-[#2B3139]">
+        {/* Right Column: Order Form (Desktop Only) */}
+        <div className="hidden lg:block w-[320px] h-full overflow-y-auto border-l border-[#2B3139]">
           <OrderForm />
         </div>
+
+        {/* Mobile Order Form Spacer (optional, if needed to prevent overlap with sticky bottom) */}
+        <div className="lg:hidden h-[100px] w-full"></div>
       </div>
 
-      {/* 4. Mobile Only: Fuera del área de scroll principal o como un sticky bottom */}
-      <div className="lg:hidden block p-4 bg-[#1e2329] border-t border-[#2B3139]">
+      {/* Mobile Sticky Order Form */}
+      <div className="lg:hidden block p-4 bg-[#1e2329] border-t border-[#2B3139] sticky bottom-0 z-10">
         <OrderForm />
       </div>
     </div>
