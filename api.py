@@ -85,98 +85,87 @@ def prepare_sequence(df, scaler, seq_len):
     return np.expand_dims(last_window, axis=0)
 
 async def update_cycle(model, scaler, df):
-    """
-    Lógica del ciclo: 
-    1. Predecir siguiente minuto.
-    2. Esperar/Verificar si ya existe dato real en yfinance.
-    3. Si hay dato real: Fine-tuning -> Guardar CSV -> Repetir.
-    """
+    print(">>> SISTEMA ONLINE: Escuchando mercado (MODO HABLADOR)... <<<")
     
     while True:
-        global_state["status"] = "Verificando nuevos datos..."
-        
-        # 1. ¿Cuál es el último dato que tenemos?
-        last_time = df['datetime'].iloc[-1]
-        now = datetime.now(last_time.tzinfo)
-        
-        # Calculamos el minuto que deberíamos tener ahora (retraso de 1-2 min por seguridad de yfinance)
-        # yfinance a veces tarda un poco en cerrar la vela del minuto.
-        target_time = last_time + timedelta(minutes=1)
-        
-        # Si estamos en el futuro respecto a los datos, intentamos descargar
-        if now >= target_time:
-            print(f"Buscando datos desde {last_time}...")
+        try:
+            # 1. Diagnóstico de tiempo
+            last_time = df['datetime'].iloc[-1]
+            now = datetime.now(last_time.tzinfo)
+            diff_seconds = (now - last_time).total_seconds()
             
-            # Descargamos datos faltantes desde el último punto conocido
-            # Intervalo 1m. 'start' debe ser el ultimo timestamp + un delta pequeño para no duplicar
-            new_data = yf.download(tickers="BTC-USD", start=last_time + timedelta(minutes=1), interval="1m", progress=False)
-            
-            if not new_data.empty:
-                # Estandarizar columnas de yfinance
-                new_data.reset_index(inplace=True)
-                new_data.rename(columns={'Datetime': 'datetime'}, inplace=True)
-                # Asegurarse que estén las columnas correctas
-                
-                # --- CICLO DE FINE TUNING (Iterar fila por fila) ---
-                for index, row in new_data.iterrows():
-                    row_df = pd.DataFrame([row]) # Convertir a DF para facilitar manejo
-                    
-                    # A) PREDECIR (Antes de que el modelo vea este dato real)
-                    X_input = prepare_sequence(df, scaler, SEQUENCE_LENGTH)
-                    if X_input is not None:
-                        prediction_scaled = model.predict(X_input, verbose=0)
-                        # Des-escalar predicción (asumiendo que predecimos 'Close' que es la col index 3)
-                        # Esto es complejo si el scaler es de 5 columnas. 
-                        # Simplificación: Guardamos el valor crudo escalado o des-escalamos si tienes lógica
-                        global_state["current_prediction"] = float(prediction_scaled[0][0]) 
+            print(f"⏱️  Check: {now.strftime('%H:%M:%S')} | Último dato en DB: {last_time.strftime('%H:%M:%S')} | Lag: {int(diff_seconds)}s")
 
-                    # B) FINE TUNING (Entrenar con el dato real que acabamos de "descubrir")
-                    # Preparamos X (secuencia anterior) e y (valor actual real)
-                    if X_input is not None:
-                        # Asumiendo que predecimos el 'Close' actual basado en los 60 anteriores
-                        actual_value = row['Close']
+            # Bajamos el umbral a 60 segundos para ser más agresivos en la búsqueda
+            if diff_seconds > 60:
+                print(f"   🔎 Buscando datos nuevos en Yahoo...")
+                
+                # Descarga segura
+                new_data = yf.download(tickers="BTC-USD", start=last_time + timedelta(minutes=1), interval="1m", progress=False)
+                
+                if not new_data.empty:
+                    # Limpieza YFinance
+                    if isinstance(new_data.columns, pd.MultiIndex):
+                        new_data.columns = new_data.columns.get_level_values(0)
+                    new_data.reset_index(inplace=True)
+                    new_data.rename(columns={'Datetime': 'datetime', 'Date': 'datetime'}, inplace=True)
+                    
+                    count = 0
+                    for index, row in new_data.iterrows():
+                        current_time = row['datetime']
                         
-                        # Escalar el objetivo
-                        if scaler:
-                            # Truco: necesitamos escalar todo el row para obtener el valor escalado de 'Close'
+                        # --- LÓGICA DE APRENDIZAJE ---
+                        X_input = prepare_sequence(df, scaler, SEQUENCE_LENGTH)
+                        
+                        if X_input is not None:
+                            real_close = row['Close']
                             row_values = row[FEATURE_COLS].values.reshape(1, -1)
                             row_scaled = scaler.transform(row_values)
-                            y_target = row_scaled[0][3] # Index 3 es Close
-                        else:
-                            y_target = actual_value
+                            target_scaled = row_scaled[0][3]
 
-                        print(f"Fine-tuning para {row['datetime']}...")
-                        global_state["is_training"] = True
-                        # Entrenamos solo con esta muestra (batch_size=1)
-                        model.fit(X_input, np.array([[y_target]]), epochs=1, verbose=0, batch_size=1)
-                        global_state["is_training"] = False
-                    
-                    # C) ACTUALIZAR HISTÓRICO (Agregar al DF y al CSV)
-                    # Formatear row para que coincida con tu CSV original
-                    save_row = row_df[['datetime'] + FEATURE_COLS].copy()
-                    
-                    # Append memoria
-                    df = pd.concat([df, save_row], ignore_index=True)
-                    
-                    # Append disco (mode='a')
-                    # Asegúrate que el formato de fecha sea string en el CSV
-                    save_row.to_csv(CSV_PATH, mode='a', header=False, index=False)
-                    
-                    print(f"Dato {row['datetime']} procesado y guardado.")
+                            global_state["is_training"] = True
+                            model.fit(X_input, np.array([[target_scaled]]), epochs=1, verbose=0, batch_size=1)
+                            global_state["is_training"] = False
 
+                        # Guardar
+                        save_df = pd.DataFrame([row])
+                        cols_ordered = ['datetime'] + FEATURE_COLS 
+                        save_df[cols_ordered].to_csv(CSV_PATH, mode='a', header=False, index=False)
+                        
+                        save_df['datetime'] = pd.to_datetime(save_df['datetime'], utc=True)
+                        df = pd.concat([df, save_df], ignore_index=True)
+                        
+                        print(f"   ✅ NUEVO DATO CAPTURADO: {current_time.strftime('%H:%M')} | Precio: {row['Close']:.2f}")
+                        count += 1
+                        global_state["last_update"] = str(current_time)
+                        
+                    if count > 0:
+                        print(f"   ✨ Se actualizaron {count} minutos.")
+                    
+                else:
+                    print("   ⚠️ Yahoo dice: 'No hay vela cerrada todavía'. Esperando...")
             else:
-                print("yfinance no tiene datos nuevos aún. Esperando...")
-        
-        # D) PREDICCIÓN FINAL (Para el futuro inmediato)
-        # Una vez al día con los datos, predecimos el minuto que aun no existe
-        X_next = prepare_sequence(df, scaler, SEQUENCE_LENGTH)
-        if X_next is not None:
-            p = model.predict(X_next, verbose=0)
-            global_state["current_prediction"] = f"Predicción escalada: {p[0][0]}" 
-            # Nota: Aquí deberías aplicar scaler.inverse_transform para tener el precio real
+                global_state["status"] = "Al día."
+                print("   👍 Estamos al día. Esperando que cierre el minuto actual.")
 
-        # Esperar 60 segundos antes de volver a intentar descargar
-        await asyncio.sleep(60)
+            # --- PREDICCIÓN ---
+            X_future = prepare_sequence(df, scaler, SEQUENCE_LENGTH)
+            if X_future is not None:
+                pred_scaled = model.predict(X_future, verbose=0)[0][0]
+                dummy_row = np.zeros((1, len(FEATURE_COLS))) 
+                dummy_row[0][3] = pred_scaled 
+                pred_final_price = scaler.inverse_transform(dummy_row)[0][3]
+                
+                global_state["current_prediction"] = float(pred_final_price)
+                # print(f"   🔮 Predicción actual: ${pred_final_price:,.2f}") # Descomenta si quieres ver esto siempre
+
+            # CAMBIO IMPORTANTE: Esperar solo 10 segundos en lugar de 60
+            # Esto hará que veas logs todo el tiempo y sepas que no murió.
+            await asyncio.sleep(10) 
+            
+        except Exception as e:
+            print(f"🔥 ERROR: {e}")
+            await asyncio.sleep(10)
 
 # --- LIFESPAN (GESTOR DE CONTEXTO) ---
 @asynccontextmanager
