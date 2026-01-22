@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { usePlayground } from '../context/PlaygroundContext';
 import { CURRENT_TICKER as DEFAULT_TICKER } from '../constants';
 
 // Simulación de los tickers futuros
@@ -18,6 +19,7 @@ interface TickerData {
 const TickerBar: React.FC = () => {
   // Estado para controlar si el menú se muestra o no
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { updateMarketPrice } = usePlayground();
   const [tickerData, setTickerData] = useState<TickerData>({
     symbol: 'BTC/USDT',
     price: DEFAULT_TICKER.price,
@@ -71,6 +73,8 @@ const TickerBar: React.FC = () => {
             volume24h,
             volume24hUsd
           });
+
+          updateMarketPrice(currentPrice);
         }
       } catch (error) {
         console.error("Error fetching ticker data:", error);

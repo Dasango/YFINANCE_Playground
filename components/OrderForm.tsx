@@ -1,15 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Info } from 'lucide-react';
-import { CURRENT_TICKER } from '../constants';
+import { usePlayground } from '../context/PlaygroundContext';
+import { OrderType } from '../types';
 
-const OrderForm: React.FC = () => {
-  const [orderType, setOrderType] = useState<'Limit' | 'Market'>('Limit');
-  const [buyPrice, setBuyPrice] = useState<string>(CURRENT_TICKER.price.toString());
-  const [buyAmount, setBuyAmount] = useState<string>('');
-  const [sellPrice, setSellPrice] = useState<string>(CURRENT_TICKER.price.toString());
-  const [sellAmount, setSellAmount] = useState<string>('');
+const InputField = ({ label, suffix, value, onChange }: any) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    // Allow digits, one dot, or one comma. 
+    // Simple regex for "starts with digits/dots/commas" to avoid letters.
+    // We won't be too strict on multiple dots/commas while typing to avoid annoyance, 
+    // but cleaning it up on blur would be better. For now, just block letters.
+    if (/^[0-9.,]*$/.test(val)) {
+      onChange(val);
+    }
+  };
 
-  const InputField = ({ label, suffix, value, onChange }: any) => (
+  return (
     <div className="mb-3">
       <div className="flex justify-between mb-1">
         <label className="text-xs text-[#848E9C]">{label}</label>
@@ -18,7 +24,7 @@ const OrderForm: React.FC = () => {
         <input
           type="text"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={handleChange}
           className="w-full bg-transparent text-sm text-[#EAECEF] p-2 outline-none text-right font-medium"
         />
         <span className="text-xs text-[#848E9C] pr-2 absolute left-2 pointer-events-none">{label === 'Price' ? '' : ''}</span>
@@ -26,15 +32,58 @@ const OrderForm: React.FC = () => {
       </div>
     </div>
   );
+};
+
+const OrderForm: React.FC = () => {
+  const { userBalance, marketPrice, placeOrder } = usePlayground();
+  const [orderType, setOrderType] = useState<OrderType>('Limit');
+
+  // Buy Form State
+  const [buyPrice, setBuyPrice] = useState<string>('');
+  const [buyAmount, setBuyAmount] = useState<string>('');
+
+  // Sell Form State
+  const [sellPrice, setSellPrice] = useState<string>('');
+  const [sellAmount, setSellAmount] = useState<string>('');
+
+  // Update price inputs when market price changes if they are empty (optional, good UX)
+  useEffect(() => {
+    if (marketPrice > 0) {
+      if (!buyPrice) setBuyPrice(marketPrice.toFixed(2));
+      if (!sellPrice) setSellPrice(marketPrice.toFixed(2));
+    }
+  }, [marketPrice]);
+
+  const handleBuy = () => {
+    const amount = parseFloat(buyAmount.replace(',', '.'));
+    const price = orderType === 'Limit' ? parseFloat(buyPrice.replace(',', '.')) : marketPrice;
+
+    if (!amount || (orderType === 'Limit' && !price)) return;
+
+    placeOrder(orderType, 'Buy', amount, price);
+    // Reset amount only?
+    setBuyAmount('');
+  };
+
+  const handleSell = () => {
+    const amount = parseFloat(sellAmount.replace(',', '.'));
+    const price = orderType === 'Limit' ? parseFloat(sellPrice.replace(',', '.')) : marketPrice;
+
+    if (!amount || (orderType === 'Limit' && !price)) return;
+
+    placeOrder(orderType, 'Sell', amount, price);
+    setSellAmount('');
+  };
+
+
 
   return (
     <div className="bg-[#161A1E] flex flex-col min-w-[320px]">
       {/* Tabs */}
       <div className="flex items-center gap-4 px-4 pt-3 pb-2">
         <button
-          // Fix: Change 'Spot' to 'Limit' to correctly highlight the button when orderType is 'Limit'
           className={`text-sm font-medium transition-colors ${orderType === 'Limit' ? 'text-[#FCD535]' : 'text-[#EAECEF] hover:text-[#FCD535]'}`}
-          onClick={() => setOrderType('Limit')} // Dummy for visual
+          onClick={() => setOrderType('Limit')}
         >
           Spot
         </button>
@@ -62,15 +111,15 @@ const OrderForm: React.FC = () => {
         <div className="flex flex-col">
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs text-[#848E9C]">Avbl</span>
-            <span className="text-xs text-[#EAECEF] font-medium">1,240.50 USDT</span>
+            <span className="text-xs text-[#EAECEF] font-medium">{userBalance.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT</span>
           </div>
 
           {orderType === 'Limit' && (
             <InputField label="Price" suffix="USDT" value={buyPrice} onChange={setBuyPrice} />
           )}
           {orderType === 'Market' && (
-            <div className="mb-3 bg-[#2B3139] rounded p-2 text-xs text-[#848E9C] text-center italic">
-              Market Price
+            <div className="mb-3 bg-[#2B3139] rounded p-2 text-xs text-[#EAECEF] text-center font-medium">
+              Market Price: ≈ {marketPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
             </div>
           )}
 
@@ -81,10 +130,12 @@ const OrderForm: React.FC = () => {
           </div>
 
           {orderType === 'Limit' && (
-            <InputField label="Total" suffix="USDT" value={buyAmount && buyPrice ? (parseFloat(buyAmount) * parseFloat(buyPrice)).toFixed(2) : ''} onChange={() => { }} />
+            <InputField label="Total" suffix="USDT" value={buyAmount && buyPrice ? (parseFloat(buyAmount.replace(',', '.')) * parseFloat(buyPrice.replace(',', '.'))).toFixed(2) : ''} onChange={() => { }} />
           )}
 
-          <button className="w-full py-2.5 mt-4 bg-[#0ECB81] hover:bg-[#0ECB81]/90 text-white text-sm font-bold rounded transition-colors">
+          <button
+            onClick={handleBuy}
+            className="w-full py-2.5 mt-4 bg-[#0ECB81] hover:bg-[#0ECB81]/90 text-white text-sm font-bold rounded transition-colors">
             Buy BTC
           </button>
         </div>
@@ -93,15 +144,15 @@ const OrderForm: React.FC = () => {
         <div className="flex flex-col">
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs text-[#848E9C]">Avbl</span>
-            <span className="text-xs text-[#EAECEF] font-medium">0.024 BTC</span>
+            <span className="text-xs text-[#EAECEF] font-medium">{userBalance.btc.toFixed(6)} BTC</span>
           </div>
 
           {orderType === 'Limit' && (
             <InputField label="Price" suffix="USDT" value={sellPrice} onChange={setSellPrice} />
           )}
           {orderType === 'Market' && (
-            <div className="mb-3 bg-[#2B3139] rounded p-2 text-xs text-[#848E9C] text-center italic">
-              Market Price
+            <div className="mb-3 bg-[#2B3139] rounded p-2 text-xs text-[#EAECEF] text-center font-medium">
+              Market Price: ≈ {marketPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
             </div>
           )}
 
@@ -112,10 +163,12 @@ const OrderForm: React.FC = () => {
           </div>
 
           {orderType === 'Limit' && (
-            <InputField label="Total" suffix="USDT" value={sellAmount && sellPrice ? (parseFloat(sellAmount) * parseFloat(sellPrice)).toFixed(2) : ''} onChange={() => { }} />
+            <InputField label="Total" suffix="USDT" value={sellAmount && sellPrice ? (parseFloat(sellAmount.replace(',', '.')) * parseFloat(sellPrice.replace(',', '.'))).toFixed(2) : ''} onChange={() => { }} />
           )}
 
-          <button className="w-full py-2.5 mt-4 bg-[#F6465D] hover:bg-[#F6465D]/90 text-white text-sm font-bold rounded transition-colors">
+          <button
+            onClick={handleSell}
+            className="w-full py-2.5 mt-4 bg-[#F6465D] hover:bg-[#F6465D]/90 text-white text-sm font-bold rounded transition-colors">
             Sell BTC
           </button>
         </div>

@@ -1,3 +1,7 @@
+export type OrderType = 'Limit' | 'Market';
+export type OrderSide = 'Buy' | 'Sell';
+export type OrderStatus = 'Open' | 'Filled' | 'Canceled';
+
 export interface CandleData {
   time: string;
   open: number;
@@ -10,18 +14,18 @@ export interface CandleData {
 export interface Order {
   id: string;
   pair: string;
-  type: 'Limit' | 'Market';
-  side: 'Buy' | 'Sell';
+  type: OrderType;
+  side: OrderSide;
   price: number;
   amount: number;
   total: number;
   filled: string;
-  status: 'Open' | 'Filled' | 'Canceled';
+  status: OrderStatus;
   date: string;
 }
 
 export enum TradeTab {
-  OPEN_ORDERS = 'Órdenes abiertas(1)',
+  OPEN_ORDERS = 'Órdenes abiertas',
   ORDER_HISTORY = 'Historial de órdenes',
   TRADE_HISTORY = 'Historial de operaciones',
   HOLDINGS = 'Holdings'
