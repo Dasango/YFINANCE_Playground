@@ -14,6 +14,7 @@ import {
 const Chart: React.FC = () => {
   const { candleData } = usePlayground();
   const [predictions, setPredictions] = useState<any[]>([]);
+  const [timeRange, setTimeRange] = useState<string>('24h');
 
   // Fetch predictions independently but aligned with updates
   useEffect(() => {
@@ -50,6 +51,24 @@ const Chart: React.FC = () => {
     }));
   }, [candleData, predictions]);
 
+  const filteredData = useMemo(() => {
+    if (!combinedData.length) return [];
+    if (timeRange === 'Max') return combinedData;
+
+    // Asumiendo 1 dato por minuto
+    const pointsMap: { [key: string]: number } = {
+      '1h': 60,
+      '2h': 120,
+      '12h': 720,
+      '24h': 1440,
+    };
+
+    const points = pointsMap[timeRange];
+    if (!points) return combinedData;
+
+    return combinedData.slice(-points);
+  }, [combinedData, timeRange]);
+
   if (combinedData.length === 0) return <div className="p-4 text-white">Cargando datos...</div>;
 
   return (
@@ -63,11 +82,26 @@ const Chart: React.FC = () => {
             LIVE
           </span>
         </div>
+
+        <div className="flex gap-1">
+          {['1h', '2h', '12h', '24h', 'Max'].map((range) => (
+            <button
+              key={range}
+              onClick={() => setTimeRange(range)}
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${timeRange === range
+                  ? 'bg-[#2B3139] text-[#FCD535]'
+                  : 'text-[#848E9C] hover:text-white hover:bg-[#2B3139]/50'
+                }`}
+            >
+              {range}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 w-full min-h-[400px] py-4 relative">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={combinedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+          <ComposedChart data={filteredData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid stroke="#2B3139" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="time"

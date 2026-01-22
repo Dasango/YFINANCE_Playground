@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LineChart, Line, ResponsiveContainer, YAxis, XAxis, CartesianGrid } from 'recharts';
+import { LineChart, Line, ResponsiveContainer, YAxis, XAxis, CartesianGrid, Tooltip } from 'recharts';
 import { usePlayground } from '../context/PlaygroundContext';
 
 const API_URL = import.meta.env.VITE_FASTAPI_URL;
@@ -8,12 +8,44 @@ interface ChartPoint {
     index: number;
     history: number | null;
     prediction: number | null;
+    velocity?: number | null;
 }
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+        const historyData = payload.find((p: any) => p.dataKey === 'history');
+        const predictionData = payload.find((p: any) => p.dataKey === 'prediction');
+
+        if (historyData && historyData.value !== null) {
+            return (
+                <div className="bg-[#1E2026] border border-[#2B3139] p-2 rounded shadow text-xs">
+                    <p className="text-[#FCD535]">Precio real: {historyData.value.toFixed(2)}</p>
+                </div>
+            );
+        }
+
+        if (predictionData && predictionData.value !== null) {
+            const velocity = predictionData.payload.velocity;
+            return (
+                <div className="bg-[#1E2026] border border-[#2B3139] p-2 rounded shadow text-xs">
+                    <p className="text-[#38bdf8]">Predicción: {predictionData.value.toFixed(2)}</p>
+                    {velocity !== undefined && velocity !== null && (
+                        <p className={`text-[10px] mt-1 ${velocity >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            Velocidad: {velocity.toFixed(2)}
+                        </p>
+                    )}
+                </div>
+            );
+        }
+    }
+    return null;
+};
 
 const MiniPredictionChart: React.FC = () => {
     const { candleData } = usePlayground();
     const [chartData, setChartData] = useState<ChartPoint[]>([]);
     const [trendType, setTrendType] = useState<'positive' | 'negative'>('positive');
+    const [predictionSpeed, setPredictionSpeed] = useState<number>(0);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -48,12 +80,16 @@ const MiniPredictionChart: React.FC = () => {
                     });
 
                     // Predictions
+                    let previousVal = lastHistoryVal;
                     data.predictions.forEach((val: number, i: number) => {
+                        const velocity = val - previousVal;
                         predictionPoints.push({
                             index: relevantHistory.length + i,
                             history: null,
-                            prediction: val
+                            prediction: val,
+                            velocity: velocity
                         });
+                        previousVal = val;
                     });
 
                     // Merge
@@ -73,6 +109,7 @@ const MiniPredictionChart: React.FC = () => {
                     } else {
                         setTrendType('positive');
                     }
+                    setPredictionSpeed(diff);
                 }
             } catch (error) {
                 console.error("Error loading mini prediction:", error);
@@ -112,9 +149,9 @@ const MiniPredictionChart: React.FC = () => {
         // - border y transition: Para el cambio suave de color
         <div className={`relative w-full h-32 bg-[#1E2026] rounded-none overflow-hidden border-y ${glowClasses} transition-all duration-700 ease-in-out flex items-center`}>
 
-            {/* Pequeño indicador de texto opcional (puedes quitarlo si quieres solo gráfica) */}
+            {/* Pequeño indicador de texto con la velocidad/pendiente */}
             <div className={`absolute top-1 left-2 text-[10px] font-bold ${glowClasses.split(' ').pop()}`}>
-                {trendType === 'negative' ? '▼ PRED' : '▲ PRED'}
+                {trendType === 'negative' ? '▼' : '▲'} PRED {predictionSpeed.toFixed(2)}
             </div>
 
             <ResponsiveContainer width="100%" height="100%">
@@ -145,6 +182,7 @@ const MiniPredictionChart: React.FC = () => {
                         isAnimationActive={false}
                         connectNulls={true}
                     />
+                    <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#2B3139', strokeWidth: 1 }} />
                 </LineChart>
             </ResponsiveContainer>
         </div>

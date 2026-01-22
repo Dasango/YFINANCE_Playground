@@ -49,42 +49,44 @@ export const PlaygroundProvider: React.FC<PlaygroundProviderProps> = ({ children
         volume24hUsd: DEFAULT_TICKER.volume24h * DEFAULT_TICKER.price,
     });
 
-    const executeLimitOrders = (currentPrice: number) => {
-        setOrders(prevOrders => {
-            let balanceChanges = { usd: 0, btc: 0 };
+    // Limit Order Execution Effect
+    useEffect(() => {
+        if (orders.length === 0 || marketPrice === 0) return;
 
-            const newOrders = prevOrders.map(order => {
-                if (order.status !== 'Open' || order.type !== 'Limit') return order;
+        let balanceChanges = { usd: 0, btc: 0 };
+        let hasChanges = false;
 
-                let shouldExecute = false;
-                if (order.side === 'Buy' && currentPrice <= order.price) {
-                    shouldExecute = true;
-                } else if (order.side === 'Sell' && currentPrice >= order.price) {
-                    shouldExecute = true;
-                }
+        const newOrders = orders.map(order => {
+            if (order.status !== 'Open' || order.type !== 'Limit') return order;
 
-                if (shouldExecute) {
-                    if (order.side === 'Buy') {
-                        balanceChanges.btc += order.amount;
-                    } else {
-                        balanceChanges.usd += order.total;
-                    }
-
-                    return { ...order, status: 'Filled', filled: '100.00%' } as Order;
-                }
-                return order;
-            });
-
-            if (balanceChanges.usd !== 0 || balanceChanges.btc !== 0) {
-                setUserBalance(prev => ({
-                    usd: prev.usd + balanceChanges.usd,
-                    btc: prev.btc + balanceChanges.btc
-                }));
+            let shouldExecute = false;
+            // Check condition
+            if (order.side === 'Buy' && marketPrice <= order.price) {
+                shouldExecute = true;
+            } else if (order.side === 'Sell' && marketPrice >= order.price) {
+                shouldExecute = true;
             }
 
-            return newOrders;
+            if (shouldExecute) {
+                hasChanges = true;
+                if (order.side === 'Buy') {
+                    balanceChanges.btc += order.amount;
+                } else {
+                    balanceChanges.usd += order.total;
+                }
+                return { ...order, status: 'Filled', filled: '100.00%' } as Order;
+            }
+            return order;
         });
-    };
+
+        if (hasChanges) {
+            setOrders(newOrders);
+            setUserBalance(prev => ({
+                usd: prev.usd + balanceChanges.usd,
+                btc: prev.btc + balanceChanges.btc
+            }));
+        }
+    }, [marketPrice, orders]); // Runs whenever price updates or orders change
 
     // Centralized Data Fetching
     useEffect(() => {
@@ -126,16 +128,15 @@ export const PlaygroundProvider: React.FC<PlaygroundProviderProps> = ({ children
                         volume24hUsd
                     });
 
-                    // Update global market price and check orders
+                    // Update global market price
                     setMarketPrice(currentPrice);
-                    executeLimitOrders(currentPrice);
+                    // executeLimitOrders removed; handled by Effect
 
                     // 2. Process Candle Data for Chart
-                    // We format it here specifically for the chart to consume directly
                     const formattedData = data.map((item: any) => {
                         const horaCompleta = item.datetime.split(' ')[1];
                         return {
-                            datetime: item.datetime, // Keep full datetime for matching predictions
+                            datetime: item.datetime,
                             time: horaCompleta ? horaCompleta.substring(0, 5) : item.datetime,
                             open: parseFloat(item.open) || 0,
                             close: parseFloat(item.close) || 0,
@@ -155,7 +156,7 @@ export const PlaygroundProvider: React.FC<PlaygroundProviderProps> = ({ children
         fetchData();
         const interval = setInterval(fetchData, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, []); // Only dependency is mount, essentially.
 
     const placeOrder = (type: OrderType, side: OrderSide, amount: number, price?: number) => {
         const executionPrice = price || marketPrice;
@@ -216,21 +217,19 @@ export const PlaygroundProvider: React.FC<PlaygroundProviderProps> = ({ children
     };
 
     const cancelOrder = (orderId: string) => {
-        setOrders(prev => {
-            const target = prev.find(o => o.id === orderId);
-            if (!target || target.status !== 'Open') return prev;
+        const target = orders.find(o => o.id === orderId);
+        if (!target || target.status !== 'Open') return;
 
-            // Refund held funds
-            setUserBalance(balance => {
-                if (target.side === 'Buy') {
-                    return { ...balance, usd: balance.usd + target.total };
-                } else {
-                    return { ...balance, btc: balance.btc + target.amount };
-                }
-            });
-
-            return prev.map(o => o.id === orderId ? { ...o, status: 'Canceled' } as Order : o);
+        // Refund held funds
+        setUserBalance(balance => {
+            if (target.side === 'Buy') {
+                return { ...balance, usd: balance.usd + target.total };
+            } else {
+                return { ...balance, btc: balance.btc + target.amount };
+            }
         });
+
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Canceled' } as Order : o));
     };
 
     return (
