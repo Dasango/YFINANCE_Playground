@@ -28,7 +28,7 @@ const OrderForm: React.FC = () => {
   );
 
   return (
-    <div className="bg-[#161A1E] h-full flex flex-col border-l border-[#2B3139] min-w-[320px]">
+    <div className="bg-[#161A1E] flex flex-col min-w-[320px]">
       {/* Tabs */}
       <div className="flex items-center gap-4 px-4 pt-3 pb-2">
         <button
@@ -57,7 +57,7 @@ const OrderForm: React.FC = () => {
       </div>
 
       {/* Forms Grid */}
-      <div className="grid grid-cols-2 gap-4 px-4 flex-1 overflow-y-auto">
+      <div className="grid grid-cols-2 gap-4 px-4 pb-4">
         {/* Buy Side */}
         <div className="flex flex-col">
           <div className="flex justify-between items-center mb-2">
@@ -84,7 +84,7 @@ const OrderForm: React.FC = () => {
             <InputField label="Total" suffix="USDT" value={buyAmount && buyPrice ? (parseFloat(buyAmount) * parseFloat(buyPrice)).toFixed(2) : ''} onChange={() => { }} />
           )}
 
-          <button className="w-full py-2.5 mt-auto bg-[#0ECB81] hover:bg-[#0ECB81]/90 text-white text-sm font-bold rounded transition-colors">
+          <button className="w-full py-2.5 mt-4 bg-[#0ECB81] hover:bg-[#0ECB81]/90 text-white text-sm font-bold rounded transition-colors">
             Buy BTC
           </button>
         </div>
@@ -115,7 +115,7 @@ const OrderForm: React.FC = () => {
             <InputField label="Total" suffix="USDT" value={sellAmount && sellPrice ? (parseFloat(sellAmount) * parseFloat(sellPrice)).toFixed(2) : ''} onChange={() => { }} />
           )}
 
-          <button className="w-full py-2.5 mt-auto bg-[#F6465D] hover:bg-[#F6465D]/90 text-white text-sm font-bold rounded transition-colors">
+          <button className="w-full py-2.5 mt-4 bg-[#F6465D] hover:bg-[#F6465D]/90 text-white text-sm font-bold rounded transition-colors">
             Sell BTC
           </button>
         </div>
