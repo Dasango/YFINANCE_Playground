@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LineChart, Line, ResponsiveContainer, YAxis, XAxis } from 'recharts';
+import { LineChart, Line, ResponsiveContainer, YAxis, XAxis, CartesianGrid } from 'recharts';
 
 // Asegúrate de que esta variable de entorno esté definida en tu proyecto (ej. .env.local)
 const API_URL = import.meta.env.VITE_FASTAPI_URL;
@@ -109,7 +109,7 @@ const MiniPredictionChart: React.FC = () => {
         // - w-44 h-12: Tamaño fijo pequeño (ajusta según necesites)
         // - bg-[#1E2026]: Fondo oscuro que coincide con tu interfaz
         // - border y transition: Para el cambio suave de color
-        <div className={`relative w-44 h-12 bg-[#1E2026] rounded-md overflow-hidden border ${glowClasses} transition-all duration-700 ease-in-out mx-4 flex items-center`}>
+        <div className={`relative w-full h-32 bg-[#1E2026] rounded-none overflow-hidden border-y ${glowClasses} transition-all duration-700 ease-in-out flex items-center`}>
 
             {/* Pequeño indicador de texto opcional (puedes quitarlo si quieres solo gráfica) */}
             <div className={`absolute top-1 left-2 text-[10px] font-bold ${glowClasses.split(' ').pop()}`}>
@@ -118,6 +118,7 @@ const MiniPredictionChart: React.FC = () => {
 
             <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                    <CartesianGrid stroke="#2B3139" strokeDasharray="3 3" />
                     {/* Ejes ocultos necesarios para el escalado automático */}
                     <YAxis domain={['auto', 'auto']} hide padding={{ top: 10, bottom: 10 }} />
                     <XAxis dataKey="index" hide />

@@ -33,17 +33,15 @@ const App: React.FC = () => {
           </div>
 
           {/* Mobile Order Form: Flows naturally after tabs */}
-          <div className="lg:hidden p-4 border-t border-[#2B3139]">
-            <div className="flex justify-center mb-4">
-              <MiniPredictionChart />
-            </div>
+          <div className="lg:hidden border-t border-[#2B3139]">
+            <MiniPredictionChart />
             <OrderForm />
           </div>
         </div>
 
         {/* Right Column: Order Form (Desktop Only) */}
         <div className="hidden lg:block w-[320px] h-full overflow-y-auto border-l border-[#2B3139]">
-          <div className="flex justify-center py-4 border-b border-[#2B3139]">
+          <div className="border-b border-[#2B3139]">
             <MiniPredictionChart />
           </div>
           <OrderForm />
