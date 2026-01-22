@@ -17,11 +17,24 @@ const Chart: React.FC = () => {
   // 1. Extraemos la lógica de obtención de datos a una función reutilizable
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(API_URL + '/api/data');
-      const json = await res.json();
+      const [resData, resPreds] = await Promise.all([
+        fetch(API_URL + '/api/data'),
+        fetch(API_URL + '/api/predictions')
+      ]);
 
-      if (Array.isArray(json)) {
-        const formattedData = json.map((item: any) => {
+      const jsonData = await resData.json();
+      const jsonPreds = await resPreds.json();
+
+      if (Array.isArray(jsonData)) {
+        // Mapa rápido de predicciones por fecha para O(1) acceso
+        const predsMap = new Map();
+        if (Array.isArray(jsonPreds)) {
+          jsonPreds.forEach((p: any) => {
+            predsMap.set(p.datetime, p.predicted_close);
+          });
+        }
+
+        const formattedData = jsonData.map((item: any) => {
           // TRUCO: Cortamos el string "2026-01-21 19:25:00" por el espacio
           // y nos quedamos con la segunda parte (la hora).
           const horaCompleta = item.datetime.split(' ')[1]; // "19:25:00"
@@ -35,6 +48,9 @@ const Chart: React.FC = () => {
             close: parseFloat(item.close) || 0,
             high: parseFloat(item.high) || 0,
             low: parseFloat(item.low) || 0,
+
+            // Predicción (si existe para esta fecha)
+            predicted_close: predsMap.has(item.datetime) ? parseFloat(predsMap.get(item.datetime)) : null
           };
         });
 
@@ -103,6 +119,15 @@ const Chart: React.FC = () => {
               itemStyle={{ fontSize: 12, color: '#FCD535' }}
               formatter={(value: number) => [value.toFixed(2), "Precio"]}
               labelStyle={{ color: '#848E9C' }}
+            />
+            <Line
+              type="monotone"
+              dataKey="predicted_close"
+              stroke="#0ea5e9" // Azul cielo para diferenciar
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+              strokeDasharray="5 5" // Punteada para indicar que es predicción/evaluación
             />
             <Line
               type="monotone"

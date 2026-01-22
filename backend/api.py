@@ -27,7 +27,8 @@ global_state = {
     "history_5m": [],
     "last_trained_time": None,
     "is_training": False,
-    "status": "Iniciando..."
+    "status": "Iniciando...",
+    "past_predictions": [] # Nueva lista para guardar (datetime, predicted_close)
 }
 
 # --- FUNCIONES DE UTILIDAD ---
@@ -57,6 +58,59 @@ def load_resources():
 
     df = df.sort_values('datetime')
     return model, scaler, df
+
+def generate_past_predictions(model, scaler, df, count=100):
+    """
+    Genera predicciones 'in-sample' para los últimos `count` registros.
+    Simula qué hubiera predicho el modelo en ese momento.
+    """
+    print(f"   ⚙️ Generando evaluaciones históricas para los últimos {count} puntos...")
+    results = []
+    
+    # Nos aseguramos de tener suficientes datos hacia atrás para la secuencia
+    # Necesitamos al menos SEQUENCE_LENGTH + count
+    if len(df) <= SEQUENCE_LENGTH:
+        return []
+
+    # Iteramos sobre los últimos 'count' registros
+    # start_idx es el índice donde comienza el bloque de 100
+    start_idx = len(df) - count
+    if start_idx < SEQUENCE_LENGTH:
+        start_idx = SEQUENCE_LENGTH # Ajuste por seguridad
+    
+    subset_indices = range(start_idx, len(df))
+    
+    for idx in subset_indices:
+        # Extraemos la secuencia ANTERIOR a este índice (idx - SEQUENCE_LENGTH hasta idx)
+        # Ojo: iloc[a:b] no incluye b, exactamente lo que queremos para 'past sequence'
+        seq_df = df.iloc[idx - SEQUENCE_LENGTH : idx]
+        
+        # Obtenemos la fecha y precio real del punto actual (idx)
+        current_row = df.iloc[idx]
+        current_time = current_row['datetime'] # Ya debe ser string o datetime
+        
+        # Preparamos secuencia
+        last_window = seq_df[FEATURE_COLS].values
+        if scaler:
+            last_window = scaler.transform(last_window)
+        
+        X_input = np.expand_dims(last_window, axis=0)
+        
+        # Predicción simple (sin ruido ni recursividad, solo raw model output)
+        pred_scaled = model.predict(X_input, verbose=0)[0][0]
+        
+        # Desescalamos
+        dummy_row = np.zeros((1, len(FEATURE_COLS)))
+        dummy_row[0][3] = pred_scaled # Close es index 3
+        pred_price = scaler.inverse_transform(dummy_row)[0][3]
+        
+        results.append({
+            "datetime": str(current_time), # Normalizamos a string para JSON
+            "predicted_close": float(pred_price)
+        })
+        
+    print(f"   ✅ {len(results)} predicciones históricas generadas.")
+    return results
 
 def prepare_sequence(df, scaler, seq_len):
     if len(df) < seq_len: return None
@@ -195,8 +249,26 @@ async def update_cycle(model, scaler, df):
                         print(f"   ✅ Dato entrenado: {row['datetime']}")
                     
                     if count > 0: print(f"   ✨ {count} minutos procesados.")
+                    if count > 0: print(f"   ✨ {count} minutos procesados.")
                 else:
                     print("   ⚠️ Sin datos nuevos.")
+            
+            # --- ACTUALIZAR PREDICCIÓN LIVE (La que se guarda en memoria) ---
+            # Si llegó un dato nuevo (o al inicio), calculamos su predicción "histórica" inmediata
+            # para añadirla a la lista y mantener la gráfica continua.
+            
+            # Verificamos si la última fecha en memoria ya tiene predicción
+            current_last_date = str(df['datetime'].iloc[-1])
+            last_stored_pred_date = global_state["past_predictions"][-1]["datetime"] if global_state["past_predictions"] else ""
+            
+            if current_last_date != last_stored_pred_date:
+                # Generamos predicción solo para el ÚLTIMO punto disponible
+                single_pred_list = generate_past_predictions(model, scaler, df, count=1)
+                if single_pred_list:
+                    global_state["past_predictions"].extend(single_pred_list)
+                    # Mantenemos solo los últimos 100
+                    if len(global_state["past_predictions"]) > 100:
+                        global_state["past_predictions"] = global_state["past_predictions"][-100:]
             else:
                 global_state["status"] = "Al día."
 
@@ -224,6 +296,11 @@ async def lifespan(app: FastAPI):
     print("--- INICIANDO SISTEMA ---")
     try:
         model, scaler, df = load_resources()
+        
+        # Generar estado inicial
+        initial_preds = generate_past_predictions(model, scaler, df, count=100)
+        global_state["past_predictions"] = initial_preds
+        
         asyncio.create_task(update_cycle(model, scaler, df))
     except Exception as e:
         print(f"Error crítico: {e}")
@@ -281,6 +358,14 @@ def get_next_prediction():
         "status": global_state["status"],
         "is_training": global_state["is_training"]
     }
+
+@app.get("/api/predictions")
+def get_past_predictions():
+    """
+    Devuelve las predicciones históricas (Train Set Eval) para los últimos 100 datos.
+    Se mantiene en memoria.
+    """
+    return global_state["past_predictions"]
 
 if __name__ == "__main__":
     import uvicorn
