@@ -242,8 +242,34 @@ app.add_middleware(
 
 @app.get("/api/data")
 def get_data():
-    if not os.path.exists(CSV_PATH): return {"error": "File not found"}
-    df = pd.read_csv(CSV_PATH)
+    if not os.path.exists(CSV_PATH): 
+        return {"error": "File not found"}
+    
+    # --- CORRECCIÓN AQUÍ ---
+    # 1. Leemos saltando las 3 filas de encabezado (skiprows=3)
+    # 2. Asignamos nombres manuales basados en el orden que mostraste en tu CSV:
+    #    (El orden en tu CSV era: Fecha, Close, High, Low, Open, Volume)
+    df = pd.read_csv(
+        CSV_PATH,
+        skiprows=3,  
+        names=['datetime', 'close', 'high', 'low', 'open', 'volume'],
+        header=None
+    )
+    
+    # 2. Convertimos a datetime
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    
+    # 3. AJUSTE DE ZONA HORARIA
+    # Tu CSV ya trae zona (+00:00), así que entrará en el 'else' (Escenario B)
+    if df['datetime'].dt.tz is None:
+        df['datetime'] = df['datetime'].dt.tz_localize('UTC').dt.tz_convert('America/Guayaquil')
+    else:
+        df['datetime'] = df['datetime'].dt.tz_convert('America/Guayaquil')
+
+    # 4. Formatear como string
+    df['datetime'] = df['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    # 5. Devolvemos los últimos 100
     return df.tail(100).to_dict(orient='records')
 
 @app.get("/api/predict")
