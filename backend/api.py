@@ -59,68 +59,89 @@ def load_resources():
     df = df.sort_values('datetime')
     return model, scaler, df
 
+import numpy as np
+import pandas as pd
+
 def generate_past_predictions(model, scaler, df, count=2000):
     """
-    Genera predicciones 'in-sample' para los últimos `count` registros.
-    Simula qué hubiera predicho el modelo en ese momento.
+    Genera predicciones 'in-sample' optimizadas (por lotes).
     """
-    print(f"   ⚙️ Generando evaluaciones históricas para los últimos {count} puntos...")
-    results = []
+    print(f" ⚙️ Generando evaluaciones históricas para los últimos {count} puntos...")
     
-    # Nos aseguramos de tener suficientes datos hacia atrás para la secuencia
-    # Necesitamos al menos SEQUENCE_LENGTH + count
+    # 1. Validaciones iniciales
     if len(df) <= SEQUENCE_LENGTH:
         return []
 
-    # Iteramos sobre los últimos 'count' registros
-    # start_idx es el índice donde comienza el bloque de 100
     start_idx = len(df) - count
     if start_idx < SEQUENCE_LENGTH:
-        start_idx = SEQUENCE_LENGTH # Ajuste por seguridad
+        start_idx = SEQUENCE_LENGTH
     
     subset_indices = range(start_idx, len(df))
     
-    for idx in subset_indices:
-        # Extraemos la secuencia ANTERIOR a este índice (idx - SEQUENCE_LENGTH hasta idx)
-        # Ojo: iloc[a:b] no incluye b, exactamente lo que queremos para 'past sequence'
-        seq_df = df.iloc[idx - SEQUENCE_LENGTH : idx]
-        
-        # Obtenemos la fecha y precio real del punto actual (idx)
-        current_row = df.iloc[idx]
-        current_time = current_row['datetime'] 
-        
-        # AJUSTE PREDICCIONES: Normalizar al mismo formato que /api/data
-        # 1. Convertir a Guayaquil (si tiene tz)
-        if hasattr(current_time, 'tz_convert'):
-             current_time_gyE = current_time.tz_convert('America/Guayaquil')
-        else:
-             # Fallback si no tuviera zona (aunque debería tener por cómo cargamos el DF)
-             current_time_gyE = current_time
-             
-        # 2. Formatear string exacto sin offset
-        time_str = current_time_gyE.strftime('%Y-%m-%d %H:%M:%S')
+    # Listas para almacenar los inputs y los metadatos temporales
+    X_batch = []
+    timestamps = []
 
-        # Preparamos secuencia
+    # -----------------------------------------------------
+    # PASO 1: Preparamos TODOS los datos (sin predecir aún)
+    # -----------------------------------------------------
+    print("   ↳ Preparando matrices...")
+    for idx in subset_indices:
+        # Ventana de datos (Features)
+        seq_df = df.iloc[idx - SEQUENCE_LENGTH : idx]
         last_window = seq_df[FEATURE_COLS].values
+        
+        # Escalamos la ventana
         if scaler:
             last_window = scaler.transform(last_window)
         
-        X_input = np.expand_dims(last_window, axis=0)
+        X_batch.append(last_window)
         
-        # Predicción simple (sin ruido ni recursividad, solo raw model output)
-        pred_scaled = model.predict(X_input, verbose=0)[0][0]
+        # Gestión de Fechas (Tu lógica original intacta)
+        current_row = df.iloc[idx]
+        current_time = current_row['datetime'] # Asegúrate que esta col existe
         
-        # Desescalamos
-        dummy_row = np.zeros((1, len(FEATURE_COLS)))
-        dummy_row[0][3] = pred_scaled # Close es index 3
-        pred_price = scaler.inverse_transform(dummy_row)[0][3]
-        
+        if hasattr(current_time, 'tz_convert'):
+             current_time_gyE = current_time.tz_convert('America/Guayaquil')
+        else:
+             current_time_gyE = current_time
+             
+        timestamps.append(current_time_gyE.strftime('%Y-%m-%d %H:%M:%S'))
+
+    # Convertimos la lista a un array de Numpy: Shape (2000, 60, 5)
+    X_batch = np.array(X_batch)
+
+    # -----------------------------------------------------
+    # PASO 2: Predicción Masiva (Una sola llamada = MUY RÁPIDO)
+    # -----------------------------------------------------
+    print(f"   ↳ Ejecutando predicción masiva para {len(X_batch)} registros...")
+    predictions_scaled = model.predict(X_batch, verbose=1, batch_size=64)
+    # predictions_scaled shape: (2000, 1)
+
+    # -----------------------------------------------------
+    # PASO 3: Des-escalado y formateo
+    # -----------------------------------------------------
+    results = []
+    target_col_idx = 3 # Index de 'Close' (según tu código)
+    
+    # Matriz dummy para el inverse_transform masivo
+    # Creamos una matriz de ceros del tamaño (2000, 5)
+    dummy_matrix = np.zeros((len(predictions_scaled), len(FEATURE_COLS)))
+    
+    # Rellenamos la columna 'Close' con todas las predicciones a la vez
+    dummy_matrix[:, target_col_idx] = predictions_scaled.flatten()
+    
+    # Des-escalamos todo de golpe
+    predictions_final = scaler.inverse_transform(dummy_matrix)[:, target_col_idx]
+    
+    # Empaquetamos resultados
+    for i in range(len(timestamps)):
         results.append({
-            "datetime": time_str,
-            "predicted_close": float(pred_price)
+            "datetime": timestamps[i],
+            "predicted_close": float(predictions_final[i])
         })
-        
-    print(f"   ✅ {len(results)} predicciones históricas generadas.")
+
+    print(f" ✅ {len(results)} predicciones históricas generadas.")
     return results
 
 def prepare_sequence(df, scaler, seq_len):
@@ -286,8 +307,8 @@ async def update_cycle(model, scaler, df):
             # --- PREDICCIÓN ---
             X_future = prepare_sequence(df, scaler, SEQUENCE_LENGTH)
             if X_future is not None:
-                last_5_history = df['Close'].tail(5).tolist()
-                global_state["history_5m"] = last_5_history
+                last_15_history = df['Close'].tail(15).tolist()
+                global_state["history_5m"] = last_15_history
 
                 # PASAMOS EL PRECIO REAL PARA ANCLAR LA CURVA
                 predictions = predict_recursive(model, X_future, scaler, last_known_close=last_close_real, steps=5)

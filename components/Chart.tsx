@@ -117,10 +117,11 @@ const Chart: React.FC = () => {
             <Tooltip
               contentStyle={{ backgroundColor: '#1E2026', borderColor: '#2B3139', color: '#fff' }}
               itemStyle={{ fontSize: 12, color: '#FCD535' }}
-              formatter={(value: number) => [value.toFixed(2), "Precio"]}
+              formatter={(value: number, name: string) => [value.toFixed(2), name]}
               labelStyle={{ color: '#848E9C' }}
             />
             <Line
+              name="Predicción"
               type="monotone"
               dataKey="predicted_close"
               stroke="#0ea5e9" // Azul cielo para diferenciar
@@ -130,6 +131,7 @@ const Chart: React.FC = () => {
               strokeDasharray="5 5" // Punteada para indicar que es predicción/evaluación
             />
             <Line
+              name="Precio"
               type="monotone"
               dataKey="close"
               stroke="#FCD535"
