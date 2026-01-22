@@ -11,17 +11,17 @@ from tensorflow.keras.models import load_model
 import joblib
 
 # --- CONFIGURACIÓN ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Ajusta estas rutas según tu estructura
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = os.path.dirname(CURRENT_DIR)
+
 CSV_PATH = os.path.join(BASE_DIR, 'assets', 'data', 'BTC-USD_data.csv')
 MODEL_PATH = os.path.join(BASE_DIR, 'assets', 'models', 'BTC-USD_best_model_multi.keras')
 SCALER_PATH = os.path.join(BASE_DIR, 'assets', 'models', 'BTC-USD_scaler.gz')
 
-# Hiperparámetros (¡AJUSTA ESTO A TU ENTRENAMIENTO ORIGINAL!)
-SEQUENCE_LENGTH = 60  # Cuántos minutos atrás mira el modelo para predecir
-FEATURE_COLS = ['Open', 'High', 'Low', 'Close', 'Volume'] # Las columnas que usaste
+SEQUENCE_LENGTH = 60
+FEATURE_COLS = ['Open', 'High', 'Low', 'Close', 'Volume']
 
-# Variables Globales (Estado en memoria)
 global_state = {
     "current_prediction": None,
     "last_update": None,
@@ -94,6 +94,7 @@ async def update_cycle(model, scaler, df):
                 
                 # Descarga segura
                 new_data = yf.download(tickers="BTC-USD", start=last_time + timedelta(minutes=1), interval="1m", progress=False)
+                await asyncio.sleep(5) 
                 
                 if not new_data.empty:
                     # Limpieza YFinance
@@ -153,7 +154,7 @@ async def update_cycle(model, scaler, df):
 
             # CAMBIO IMPORTANTE: Esperar solo 10 segundos en lugar de 60
             # Esto hará que veas logs todo el tiempo y sepas que no murió.
-            await asyncio.sleep(10) 
+            await asyncio.sleep(20) 
             
         except Exception as e:
             print(f"🔥 ERROR: {e}")
@@ -197,7 +198,7 @@ def get_data():
         # Leemos directo del disco para asegurar consistencia
         df = pd.read_csv(CSV_PATH)
         # Convertir a dict
-        return df.tail(1000).to_dict(orient='records') # Limitamos a los ultimos 1000 para no saturar
+        return df.tail(100).to_dict(orient='records') # Limitamos a los ultimos 1000 para no saturar
     except Exception as e:
         return {"error": str(e)}
 
