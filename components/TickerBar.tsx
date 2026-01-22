@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CURRENT_TICKER } from '../constants';
-import MiniPredictionChart from './MiniPredictionChart';
+
 
 // Simulación de los tickers futuros
 const AVAILABLE_TICKERS = ['TSLA', 'ETH', 'GOOGL', 'BTC'];
@@ -86,11 +86,6 @@ const TickerBar: React.FC = () => {
       <div className="flex flex-col">
         <span className="text-xs text-[#848E9C]">24h Volume(USDT)</span>
         <span className="text-xs text-[#EAECEF]">{(CURRENT_TICKER.volume24h * CURRENT_TICKER.price / 1000000).toFixed(2)}M</span>
-      </div>
-
-      {/* Mini Chart al fondo */}
-      <div className="ml-auto">
-        <MiniPredictionChart />
       </div>
     </div>
   );

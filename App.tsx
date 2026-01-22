@@ -3,6 +3,7 @@ import Header from './components/Header';
 import TickerBar from './components/TickerBar';
 import Chart from './components/Chart';
 import OrderForm from './components/OrderForm';
+import MiniPredictionChart from './components/MiniPredictionChart';
 import UserTabs from './components/UserTabs';
 
 const App: React.FC = () => {
@@ -33,12 +34,18 @@ const App: React.FC = () => {
 
           {/* Mobile Order Form: Flows naturally after tabs */}
           <div className="lg:hidden p-4 border-t border-[#2B3139]">
+            <div className="flex justify-center mb-4">
+              <MiniPredictionChart />
+            </div>
             <OrderForm />
           </div>
         </div>
 
         {/* Right Column: Order Form (Desktop Only) */}
         <div className="hidden lg:block w-[320px] h-full overflow-y-auto border-l border-[#2B3139]">
+          <div className="flex justify-center py-4 border-b border-[#2B3139]">
+            <MiniPredictionChart />
+          </div>
           <OrderForm />
         </div>
       </div>
