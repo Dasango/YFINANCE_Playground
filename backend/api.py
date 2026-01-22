@@ -59,7 +59,7 @@ def load_resources():
     df = df.sort_values('datetime')
     return model, scaler, df
 
-def generate_past_predictions(model, scaler, df, count=100):
+def generate_past_predictions(model, scaler, df, count=2000):
     """
     Genera predicciones 'in-sample' para los últimos `count` registros.
     Simula qué hubiera predicho el modelo en ese momento.
@@ -87,8 +87,19 @@ def generate_past_predictions(model, scaler, df, count=100):
         
         # Obtenemos la fecha y precio real del punto actual (idx)
         current_row = df.iloc[idx]
-        current_time = current_row['datetime'] # Ya debe ser string o datetime
+        current_time = current_row['datetime'] 
         
+        # AJUSTE PREDICCIONES: Normalizar al mismo formato que /api/data
+        # 1. Convertir a Guayaquil (si tiene tz)
+        if hasattr(current_time, 'tz_convert'):
+             current_time_gyE = current_time.tz_convert('America/Guayaquil')
+        else:
+             # Fallback si no tuviera zona (aunque debería tener por cómo cargamos el DF)
+             current_time_gyE = current_time
+             
+        # 2. Formatear string exacto sin offset
+        time_str = current_time_gyE.strftime('%Y-%m-%d %H:%M:%S')
+
         # Preparamos secuencia
         last_window = seq_df[FEATURE_COLS].values
         if scaler:
@@ -105,7 +116,7 @@ def generate_past_predictions(model, scaler, df, count=100):
         pred_price = scaler.inverse_transform(dummy_row)[0][3]
         
         results.append({
-            "datetime": str(current_time), # Normalizamos a string para JSON
+            "datetime": time_str,
             "predicted_close": float(pred_price)
         })
         
@@ -267,8 +278,8 @@ async def update_cycle(model, scaler, df):
                 if single_pred_list:
                     global_state["past_predictions"].extend(single_pred_list)
                     # Mantenemos solo los últimos 100
-                    if len(global_state["past_predictions"]) > 100:
-                        global_state["past_predictions"] = global_state["past_predictions"][-100:]
+                    if len(global_state["past_predictions"]) > 2000:
+                        global_state["past_predictions"] = global_state["past_predictions"][-2000:]
             else:
                 global_state["status"] = "Al día."
 
@@ -298,7 +309,7 @@ async def lifespan(app: FastAPI):
         model, scaler, df = load_resources()
         
         # Generar estado inicial
-        initial_preds = generate_past_predictions(model, scaler, df, count=100)
+        initial_preds = generate_past_predictions(model, scaler, df, count=2000)
         global_state["past_predictions"] = initial_preds
         
         asyncio.create_task(update_cycle(model, scaler, df))
@@ -347,7 +358,7 @@ def get_data():
     df['datetime'] = df['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
     # 5. Devolvemos los últimos 100
-    return df.tail(100).to_dict(orient='records')
+    return df.tail(2000).to_dict(orient='records')
 
 @app.get("/api/predict")
 def get_next_prediction():
