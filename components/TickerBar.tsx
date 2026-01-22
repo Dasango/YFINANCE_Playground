@@ -19,72 +19,7 @@ interface TickerData {
 const TickerBar: React.FC = () => {
   // Estado para controlar si el menú se muestra o no
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { updateMarketPrice } = usePlayground();
-  const [tickerData, setTickerData] = useState<TickerData>({
-    symbol: 'BTC/USDT',
-    price: DEFAULT_TICKER.price,
-    change24h: DEFAULT_TICKER.change24h,
-    high24h: DEFAULT_TICKER.high24h,
-    low24h: DEFAULT_TICKER.low24h,
-    volume24h: DEFAULT_TICKER.volume24h,
-    volume24hUsd: DEFAULT_TICKER.volume24h * DEFAULT_TICKER.price,
-  });
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/data`);
-        if (!res.ok) return;
-        const data = await res.json();
-
-        if (data && data.length > 0) {
-          // Asumimos que los datos son minutos. 24h = 1440 minutos.
-          // Tomamos los últimos 1440 o todos si hay menos.
-          const last24hData = data.slice(-1440);
-
-          const lastCandle = last24hData[last24hData.length - 1];
-          const currentPrice = lastCandle.close;
-
-          // Precio hace 24h (o el más antiguo disponible en el rango)
-          const firstCandle = last24hData[0];
-          const prevPrice = firstCandle.open; // Usamos open del inicio del periodo
-
-          const change24h = ((currentPrice - prevPrice) / prevPrice) * 100;
-
-          let high24h = -Infinity;
-          let low24h = Infinity;
-          let volume24h = 0;
-          let volume24hUsd = 0;
-
-          last24hData.forEach((d: any) => {
-            if (d.high > high24h) high24h = d.high;
-            if (d.low < low24h) low24h = d.low;
-            volume24h += d.volume;
-            // Estimación de volumen en USDT (volumen * precio cierre de ese minuto)
-            volume24hUsd += d.volume * d.close;
-          });
-
-          setTickerData({
-            symbol: 'BTC/USDT',
-            price: currentPrice,
-            change24h,
-            high24h,
-            low24h,
-            volume24h,
-            volume24hUsd
-          });
-
-          updateMarketPrice(currentPrice);
-        }
-      } catch (error) {
-        console.error("Error fetching ticker data:", error);
-      }
-    };
-
-    fetchData();
-    const interval = setInterval(fetchData, 5000); // Actualizar cada 5s
-    return () => clearInterval(interval);
-  }, []);
+  const { tickerData } = usePlayground();
 
   const isPositive = tickerData.change24h >= 0;
   const colorClass = isPositive ? 'text-[#0ECB81]' : 'text-[#F6465D]';

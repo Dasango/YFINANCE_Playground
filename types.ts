@@ -11,6 +11,16 @@ export interface CandleData {
   volume: number;
 }
 
+export interface TickerData {
+  symbol: string;
+  price: number;
+  change24h: number;
+  high24h: number;
+  low24h: number;
+  volume24h: number;
+  volume24hUsd: number;
+}
+
 export interface Order {
   id: string;
   pair: string;
