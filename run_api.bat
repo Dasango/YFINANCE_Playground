@@ -14,4 +14,4 @@ pip install -r requirements.txt
 
 REM Run the API
 echo Starting API...
-python source/api.py
+python backend/api.py
