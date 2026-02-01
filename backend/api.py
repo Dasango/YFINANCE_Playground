@@ -15,7 +15,7 @@ import random
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(CURRENT_DIR)
 
-CSV_PATH = os.path.join(BASE_DIR, 'assets', 'data', 'BTC-USD_data.csv')
+# CSV_PATH eliminado
 MODEL_PATH = os.path.join(BASE_DIR, 'assets', 'models', 'BTC-USD_best_model_multi.keras')
 SCALER_PATH = os.path.join(BASE_DIR, 'assets', 'models', 'BTC-USD_scaler.gz')
 
@@ -28,14 +28,15 @@ global_state = {
     "last_trained_time": None,
     "is_training": False,
     "status": "Iniciando...",
-    "past_predictions": [] # Nueva lista para guardar (datetime, predicted_close)
+    "past_predictions": [], # Nueva lista para guardar (datetime, predicted_close)
+    "df": pd.DataFrame() # DataFrame en memoria
 }
 
 # --- FUNCIONES DE UTILIDAD ---
 
 def load_resources():
-    if not os.path.exists(MODEL_PATH) or not os.path.exists(CSV_PATH):
-        raise FileNotFoundError("Faltan archivos.")
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(SCALER_PATH):
+        raise FileNotFoundError("Faltan archivos de modelo o scaler.")
     
     print(f"Cargando modelo desde {MODEL_PATH}...")
     model = load_model(MODEL_PATH)
@@ -45,19 +46,48 @@ def load_resources():
         warnings.simplefilter("ignore")
         scaler = joblib.load(SCALER_PATH)
 
-    print("Leyendo CSV...")
-    df = pd.read_csv(CSV_PATH, header=0, skiprows=[1, 2])
+    return model, scaler
 
-    if 'Price' in df.columns: df.rename(columns={'Price': 'datetime'}, inplace=True)
-    if 'Date' in df.columns: df.rename(columns={'Date': 'datetime'}, inplace=True)
-
-    df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
+async def init_data(scaler):
+    """
+    Descarga los últimos ~3000 minutos de datos (para asegurar tener 2000 limpios)
+    y llena el DataFrame en memoria global.
+    """
+    print(" 📥 Descargando datos iniciales de YFinance (últimos 5 días)...")
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=5) # 5 días * 24h * 60m = 7200 min (suficiente)
     
+    # yfinance permite hasta 7 días con 1m interval
+    df = yf.download(tickers="BTC-USD", start=start_date, end=end_date, interval="1m", progress=False)
+    
+    if df.empty:
+        raise ValueError("No se pudieron descargar datos de YFinance.")
+
+    # Limpieza básica
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df.reset_index(inplace=True)
+    df.rename(columns={'Datetime': 'datetime', 'Date': 'datetime'}, inplace=True)
+    
+    # Asegurar columnas numéricas
     for col in FEATURE_COLS:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    df = df.sort_values('datetime')
-    return model, scaler, df
+    
+    # Zona horaria (ya viene en UTC usualmente, convertimos a Guayaquil para consistencia visual)
+    if 'datetime' in df.columns:
+        if df['datetime'].dt.tz is None:
+            df['datetime'] = df['datetime'].dt.tz_localize('UTC')
+        df['datetime'] = df['datetime'].dt.tz_convert('America/Guayaquil')
+    
+    df.sort_values('datetime', inplace=True)
+    
+    # Nos quedamos con los últimos 2000
+    df = df.tail(2000).reset_index(drop=True)
+    
+    print(f" Datos iniciales cargados: {len(df)} registros. Último: {df.iloc[-1]['datetime']}")
+    
+    global_state["df"] = df
+    return df
 
 import numpy as np
 import pandas as pd
@@ -85,7 +115,11 @@ def generate_past_predictions(model, scaler, df, count=2000):
     # -----------------------------------------------------
     # PASO 1: Preparamos TODOS los datos (sin predecir aún)
     # -----------------------------------------------------
+    if not subset_indices:
+        return []
+
     print("   ↳ Preparando matrices...")
+    # Optimización: Vectorizar si es posible, por ahora iteramos
     for idx in subset_indices:
         # Ventana de datos (Features)
         seq_df = df.iloc[idx - SEQUENCE_LENGTH : idx]
@@ -97,18 +131,17 @@ def generate_past_predictions(model, scaler, df, count=2000):
         
         X_batch.append(last_window)
         
-        # Gestión de Fechas (Tu lógica original intacta)
+        # Gestión de Fechas
         current_row = df.iloc[idx]
-        current_time = current_row['datetime'] # Asegúrate que esta col existe
+        current_time = current_row['datetime']
         
-        if hasattr(current_time, 'tz_convert'):
-             current_time_gyE = current_time.tz_convert('America/Guayaquil')
-        else:
-             current_time_gyE = current_time
-             
-        timestamps.append(current_time_gyE.strftime('%Y-%m-%d %H:%M:%S'))
+        # Ya debería estar en la timezone correcta por init_data/update_cycle
+        timestamps.append(current_time.strftime('%Y-%m-%d %H:%M:%S'))
 
-    # Convertimos la lista a un array de Numpy: Shape (2000, 60, 5)
+    if not X_batch:
+        return []
+
+    # Convertimos la lista a un array de Numpy: Shape (N, 60, 5)
     X_batch = np.array(X_batch)
 
     # -----------------------------------------------------
@@ -116,7 +149,7 @@ def generate_past_predictions(model, scaler, df, count=2000):
     # -----------------------------------------------------
     print(f"   ↳ Ejecutando predicción masiva para {len(X_batch)} registros...")
     predictions_scaled = model.predict(X_batch, verbose=1, batch_size=64)
-    # predictions_scaled shape: (2000, 1)
+    # predictions_scaled shape: (N, 1)
 
     # -----------------------------------------------------
     # PASO 3: Des-escalado y formateo
@@ -125,7 +158,6 @@ def generate_past_predictions(model, scaler, df, count=2000):
     target_col_idx = 3 # Index de 'Close' (según tu código)
     
     # Matriz dummy para el inverse_transform masivo
-    # Creamos una matriz de ceros del tamaño (2000, 5)
     dummy_matrix = np.zeros((len(predictions_scaled), len(FEATURE_COLS)))
     
     # Rellenamos la columna 'Close' con todas las predicciones a la vez
@@ -191,7 +223,6 @@ def predict_recursive(model, base_sequence, scaler, last_known_close, steps=5):
         else:
             # C. Inyección de Ruido (Solo del paso 2 al 5)
             # Generamos un pequeño movimiento aleatorio basado en la volatilidad histórica
-            # random.gauss(media, desviacion)
             step_noise = random.gauss(0, volatility_scale * 0.5) # 0.5 es un factor de suavizado
             accumulated_noise += step_noise
             
@@ -226,24 +257,28 @@ def predict_recursive(model, base_sequence, scaler, last_known_close, steps=5):
 
     return future_prices
 
-async def update_cycle(model, scaler, df):
-    print(">>> SISTEMA ONLINE: Escuchando mercado... <<<")
+async def update_cycle(model, scaler):
+    print(">>> SISTEMA ONLINE: Escuchando mercado (In-Memory)... <<<")
     
     while True:
         try:
-            last_time_in_db = df['datetime'].iloc[-1]
-            last_close_real = df['Close'].iloc[-1] # <--- IMPORTANTE: Precio real actual
+            # Referencia al DF global
+            df = global_state["df"]
             
-            global_state["last_trained_time"] = str(last_time_in_db)
+            last_time_in_mem = df['datetime'].iloc[-1]
+            last_close_real = df['Close'].iloc[-1]
+            
+            global_state["last_trained_time"] = str(last_time_in_mem)
 
-            now = datetime.now(last_time_in_db.tzinfo)
-            diff_seconds = (now - last_time_in_db).total_seconds()
+            now = datetime.now(last_time_in_mem.tzinfo)
+            diff_seconds = (now - last_time_in_mem).total_seconds()
             
-            print(f"⏱️  Lag: {int(diff_seconds)}s | Precio DB: ${last_close_real:,.2f}")
+            print(f" Lag: {int(diff_seconds)}s | Precio Memoria: ${last_close_real:,.2f}")
 
             if diff_seconds > 60:
-                print(f"   🔎 Buscando datos nuevos...")
-                new_data = yf.download(tickers="BTC-USD", start=last_time_in_db + timedelta(minutes=1), interval="1m", progress=False)
+                print(f"   🔎 Buscando datos nuevos (YFinance)...")
+                # Pedimos datos que cubran el hueco
+                new_data = yf.download(tickers="BTC-USD", start=last_time_in_mem + timedelta(minutes=1), interval="1m", progress=False)
                 await asyncio.sleep(2) 
                 
                 if not new_data.empty:
@@ -252,44 +287,58 @@ async def update_cycle(model, scaler, df):
                     new_data.reset_index(inplace=True)
                     new_data.rename(columns={'Datetime': 'datetime', 'Date': 'datetime'}, inplace=True)
                     
-                    count = 0
-                    for index, row in new_data.iterrows():
-                        X_input = prepare_sequence(df, scaler, SEQUENCE_LENGTH)
+                    # Limpieza y Conversión antes de procesar
+                    if not new_data.empty:
+                        # Asegurar zona horaria
+                        if new_data['datetime'].dt.tz is None:
+                             new_data['datetime'] = new_data['datetime'].dt.tz_localize('UTC')
+                        new_data['datetime'] = new_data['datetime'].dt.tz_convert('America/Guayaquil')
                         
-                        if X_input is not None:
-                            real_row_vals = row[FEATURE_COLS].values.reshape(1, -1)
-                            row_scaled = scaler.transform(real_row_vals)
-                            target_scaled = row_scaled[0][3]
-
-                            if row['High'] == row['Low'] or row['Volume'] == 0:
-                                print(f" ⚠️ Saltando entrenamiento: Datos planos.")
-                            else:
-                                global_state["is_training"] = True
-                                model.fit(X_input, np.array([[target_scaled]]), epochs=1, verbose=0, batch_size=1)
-                                global_state["is_training"] = False
-                                model.save(MODEL_PATH) 
-
-                        save_df = pd.DataFrame([row])
-                        cols_ordered = ['datetime'] + FEATURE_COLS 
-                        save_df[cols_ordered].to_csv(CSV_PATH, mode='a', header=False, index=False)
-                        save_df['datetime'] = pd.to_datetime(save_df['datetime'], utc=True)
-                        df = pd.concat([df, save_df], ignore_index=True)
+                        count = 0
                         
-                        last_close_real = row['Close'] # Actualizamos precio real en memoria
-                        global_state["last_trained_time"] = str(row['datetime'])
-                        count += 1
-                        print(f"   ✅ Dato entrenado: {row['datetime']}")
-                    
-                    if count > 0: print(f"   ✨ {count} minutos procesados.")
-                    if count > 0: print(f"   ✨ {count} minutos procesados.")
+                        # Iteramos los nuevos datos para entrenar y agregar
+                        for index, row in new_data.iterrows():
+                            # Re-evaluamos el DF actual en cada paso
+                            current_df = global_state["df"]
+                            X_input = prepare_sequence(current_df, scaler, SEQUENCE_LENGTH)
+                            
+                            # Entrenamiento Online
+                            if X_input is not None:
+                                real_row_vals = row[FEATURE_COLS].values.reshape(1, -1)
+                                row_scaled = scaler.transform(real_row_vals)
+                                target_scaled = row_scaled[0][3]
+
+                                if row['High'] == row['Low'] or row['Volume'] == 0:
+                                    pass
+                                else:
+                                    global_state["is_training"] = True
+                                    model.fit(X_input, np.array([[target_scaled]]), epochs=1, verbose=0, batch_size=1)
+                                    global_state["is_training"] = False
+                                    model.save(MODEL_PATH) 
+
+                            # Agregar al DF en memoria
+                            new_row_df = pd.DataFrame([row])
+                            # Solo columnas necesarias
+                            new_row_df = new_row_df[['datetime'] + FEATURE_COLS]
+                            
+                            # Concatenar y mantener ultimos 2000
+                            updated_df = pd.concat([current_df, new_row_df], ignore_index=True)
+                            if len(updated_df) > 2000:
+                                updated_df = updated_df.tail(2000).reset_index(drop=True)
+                                
+                            global_state["df"] = updated_df
+                            
+                            last_close_real = row['Close']
+                            global_state["last_trained_time"] = str(row['datetime'])
+                            count += 1
+                        
+                        if count > 0: print(f"   ✨ {count} minutos procesados e integrados.")
                 else:
-                    print("   ⚠️ Sin datos nuevos.")
+                    print("   ⚠️ Sin datos nuevos aún.")
             
             # --- ACTUALIZAR PREDICCIÓN LIVE (La que se guarda en memoria) ---
-            # Si llegó un dato nuevo (o al inicio), calculamos su predicción "histórica" inmediata
-            # para añadirla a la lista y mantener la gráfica continua.
-            
-            # Verificamos si la última fecha en memoria ya tiene predicción
+            # Recalculamos sobre el estado actual
+            df = global_state["df"] # Refrescamos ref
             current_last_date = str(df['datetime'].iloc[-1])
             last_stored_pred_date = global_state["past_predictions"][-1]["datetime"] if global_state["past_predictions"] else ""
             
@@ -298,13 +347,13 @@ async def update_cycle(model, scaler, df):
                 single_pred_list = generate_past_predictions(model, scaler, df, count=1)
                 if single_pred_list:
                     global_state["past_predictions"].extend(single_pred_list)
-                    # Mantenemos solo los últimos 100
+                    # Mantenemos solo los últimos 2000
                     if len(global_state["past_predictions"]) > 2000:
                         global_state["past_predictions"] = global_state["past_predictions"][-2000:]
             else:
                 global_state["status"] = "Al día."
 
-            # --- PREDICCIÓN ---
+            # --- PREDICCIÓN FUTURA ---
             X_future = prepare_sequence(df, scaler, SEQUENCE_LENGTH)
             if X_future is not None:
                 last_15_history = df['Close'].tail(15).tolist()
@@ -322,20 +371,24 @@ async def update_cycle(model, scaler, df):
             print(f"🔥 ERROR en ciclo: {e}")
             await asyncio.sleep(10)
 
-# --- RESTO DEL CODIGO IGUAL (LIFESPAN y ENDPOINTS) ---
+# --- LIFESPAN y ENDPOINTS ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("--- INICIANDO SISTEMA ---")
+    print("--- INICIANDO SISTEMA (Modo Memoria) ---")
     try:
-        model, scaler, df = load_resources()
+        model, scaler = load_resources()
         
-        # Generar estado inicial
+        # 1. Cargar datos iniciales en memoria
+        df = await init_data(scaler)
+        
+        # 2. Backtesting inicial (llenar past_predictions con los 2000 datos)
         initial_preds = generate_past_predictions(model, scaler, df, count=2000)
         global_state["past_predictions"] = initial_preds
         
-        asyncio.create_task(update_cycle(model, scaler, df))
+        # 3. Arrancar ciclo de actualización
+        asyncio.create_task(update_cycle(model, scaler))
     except Exception as e:
-        print(f"Error crítico: {e}")
+        print(f"Error crítico al iniciar: {e}")
     yield
     print("--- APAGANDO SISTEMA ---")
 
@@ -351,35 +404,19 @@ app.add_middleware(
 
 @app.get("/api/data")
 def get_data():
-    if not os.path.exists(CSV_PATH): 
-        return {"error": "File not found"}
+    """
+    Devuelve los datos actuales en memoria (hasta 2000 registros).
+    """
+    df = global_state.get("df")
+    if df is None or df.empty:
+        return []
     
-    # --- CORRECCIÓN AQUÍ ---
-    # 1. Leemos saltando las 3 filas de encabezado (skiprows=3)
-    # 2. Asignamos nombres manuales basados en el orden que mostraste en tu CSV:
-    #    (El orden en tu CSV era: Fecha, Close, High, Low, Open, Volume)
-    df = pd.read_csv(
-        CSV_PATH,
-        skiprows=3,  
-        names=['datetime', 'close', 'high', 'low', 'open', 'volume'],
-        header=None
-    )
+    # Formatear datetime a string para JSON
+    # Hacemos una copia para no alterar el DF original
+    res_df = df.copy()
+    res_df['datetime'] = res_df['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
     
-    # 2. Convertimos a datetime
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    
-    # 3. AJUSTE DE ZONA HORARIA
-    # Tu CSV ya trae zona (+00:00), así que entrará en el 'else' (Escenario B)
-    if df['datetime'].dt.tz is None:
-        df['datetime'] = df['datetime'].dt.tz_localize('UTC').dt.tz_convert('America/Guayaquil')
-    else:
-        df['datetime'] = df['datetime'].dt.tz_convert('America/Guayaquil')
-
-    # 4. Formatear como string
-    df['datetime'] = df['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-
-    # 5. Devolvemos los últimos 100
-    return df.tail(2000).to_dict(orient='records')
+    return res_df.to_dict(orient='records')
 
 @app.get("/api/predict")
 def get_next_prediction():
@@ -394,8 +431,7 @@ def get_next_prediction():
 @app.get("/api/predictions")
 def get_past_predictions():
     """
-    Devuelve las predicciones históricas (Train Set Eval) para los últimos 100 datos.
-    Se mantiene en memoria.
+    Devuelve las predicciones históricas (Train Set Eval).
     """
     return global_state["past_predictions"]
 
