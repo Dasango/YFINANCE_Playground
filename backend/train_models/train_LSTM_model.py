@@ -12,14 +12,9 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout, Bidirectional
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.optimizers import Adam
 
-# ---------------------------------------------------------
-# 1. Configuración de Rutas Locales
-# ---------------------------------------------------------
 
-# En lugar de Drive, guardaremos en una carpeta 'Modelos_Trading'
-# ubicada donde esté este archivo script.
 base_dir = os.getcwd() # Obtiene la carpeta actual
-save_path = os.path.join(base_dir, 'Modelos_Trading')
+save_path = os.path.join(base_dir, 'assets', 'models')
 
 if not os.path.exists(save_path):
     os.makedirs(save_path)
@@ -43,9 +38,9 @@ if data.empty:
 data = data.ffill().bfill()
 
 # --- GUARDAR CSV LOCALMENTE ---
-csv_filename = os.path.join(save_path, f'{ticker}_data_1min_7days.csv')
-data.to_csv(csv_filename)
-print(f"✅ CSV guardado: {csv_filename}")
+# csv_filename = os.path.join(save_path, f'{ticker}_data_1min_7days.csv')
+# data.to_csv(csv_filename)
+# print(f"✅ CSV guardado: {csv_filename}")
 
 # ---------------------------------------------------------
 # 3. Preprocesamiento MULTIVARIABLE

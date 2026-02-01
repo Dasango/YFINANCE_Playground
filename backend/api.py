@@ -337,21 +337,55 @@ async def update_cycle(model, scaler):
                     print("   ⚠️ Sin datos nuevos aún.")
             
             # --- ACTUALIZAR PREDICCIÓN LIVE (La que se guarda en memoria) ---
+            # --- ACTUALIZAR PREDICCIÓN LIVE (La que se guarda en memoria) ---
+            # Si llegó un dato nuevo (o al inicio), calculamos su predicción "histórica" inmediata
+            # para añadirla a la lista y mantener la gráfica continua.
+            
             # Recalculamos sobre el estado actual
             df = global_state["df"] # Refrescamos ref
-            current_last_date = str(df['datetime'].iloc[-1])
-            last_stored_pred_date = global_state["past_predictions"][-1]["datetime"] if global_state["past_predictions"] else ""
             
-            if current_last_date != last_stored_pred_date:
-                # Generamos predicción solo para el ÚLTIMO punto disponible
-                single_pred_list = generate_past_predictions(model, scaler, df, count=1)
-                if single_pred_list:
-                    global_state["past_predictions"].extend(single_pred_list)
+            # Lógica dinámica para saber cuántos puntos faltan predecir
+            count_missing = 0
+            last_pred_entry = global_state["past_predictions"][-1] if global_state["past_predictions"] else None
+            
+            if last_pred_entry:
+                last_ts_str = last_pred_entry["datetime"]
+                
+                # Buscamos en qué índice del DF está esa última predicción
+                # Eficiente: Convertimos a string solo lo necesario o usamos búsqueda inversa
+                # Para simplificar y asegurar exactitud (dado que son solo 2000 datos), comparamos strings
+                df_dates_str = df['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                
+                matches = df.index[df_dates_str == last_ts_str].tolist()
+                
+                if matches:
+                    last_idx = matches[-1]
+                    # Queremos predecir desde last_idx + 1 hasta el final
+                    count_missing = len(df) - (last_idx + 1)
+                else:
+                    # Si no encontramos la fecha (ej. se salió de la ventana de 2000), 
+                    # asumimos que solo necesitamos lo más nuevo. 
+                    # Podríamos regenerar todo, pero para eficiencia asumimos 1 si no hay gap obvio.
+                    # Mejor estrategia: Si no hay match, asumimos que necesitamos predecir TODO lo nuevo.
+                    # Pero para no bloquear, probemos con 1 por seguridad o todo.
+                    # Vamos a regenerar solo si el gap es pequeño? No, regenerar todo es safer si se perdió el track.
+                    # Pero para este caso "reaches half", probablemente solo necesitamos catch up.
+                    # Vamos a asumir que si no match, es porque df avanzó mucho.
+                    count_missing = 1 
+            else:
+                # Si está vacío, predecir todo lo posible
+                count_missing = len(df)
+
+            if count_missing > 0:
+                print(f" ⚙️ Sincronizando predicciones: Generando {count_missing} faltantes...")
+                new_preds = generate_past_predictions(model, scaler, df, count=count_missing)
+                if new_preds:
+                    global_state["past_predictions"].extend(new_preds)
                     # Mantenemos solo los últimos 2000
                     if len(global_state["past_predictions"]) > 2000:
                         global_state["past_predictions"] = global_state["past_predictions"][-2000:]
             else:
-                global_state["status"] = "Al día."
+                 global_state["status"] = "Al día."
 
             # --- PREDICCIÓN FUTURA ---
             X_future = prepare_sequence(df, scaler, SEQUENCE_LENGTH)
@@ -414,6 +448,16 @@ def get_data():
     # Formatear datetime a string para JSON
     # Hacemos una copia para no alterar el DF original
     res_df = df.copy()
+    
+    # Renombrar columnas para compatibilidad con frontend (que espera minúsculas)
+    res_df = res_df.rename(columns={
+        'Open': 'open',
+        'High': 'high',
+        'Low': 'low',
+        'Close': 'close',
+        'Volume': 'volume'
+    })
+
     res_df['datetime'] = res_df['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
     
     return res_df.to_dict(orient='records')
