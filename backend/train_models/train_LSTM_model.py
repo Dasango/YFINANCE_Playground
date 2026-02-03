@@ -37,11 +37,6 @@ if data.empty:
 # Limpieza básica
 data = data.ffill().bfill()
 
-# --- GUARDAR CSV LOCALMENTE ---
-# csv_filename = os.path.join(save_path, f'{ticker}_data_1min_7days.csv')
-# data.to_csv(csv_filename)
-# print(f"✅ CSV guardado: {csv_filename}")
-
 # ---------------------------------------------------------
 # 3. Preprocesamiento MULTIVARIABLE
 # ---------------------------------------------------------
@@ -62,16 +57,12 @@ print(f"✅ Scaler guardado: {scaler_filename}")
 
 # Ventana de predicción
 prediction_days = 60
-
-# El índice de 'Close' en nuestra lista ['Open', 'High', 'Low', 'Close', 'Volume'] es 3
 target_col_index = features.index('Close')
 
 def create_sequences_multivariate(dataset, prediction_days, target_col_idx):
     x, y = [], []
     for i in range(prediction_days, len(dataset)):
-        # Input: 60 días anteriores con todas las variables
         x.append(dataset[i-prediction_days:i, :])
-        # Output: El precio de cierre del día actual
         y.append(dataset[i, target_col_idx])
     return np.array(x), np.array(y)
 
@@ -88,14 +79,10 @@ print(f"📊 Forma de los datos de entrada (X): {x_tr.shape}")
 # 4. Arquitectura del Modelo
 # ---------------------------------------------------------
 model = Sequential()
-
-# Input shape: (60 pasos de tiempo, 5 características)
 model.add(Bidirectional(LSTM(units=128, return_sequences=True), input_shape=(x_tr.shape[1], x_tr.shape[2])))
 model.add(Dropout(0.3))
-
 model.add(LSTM(units=64, return_sequences=False))
 model.add(Dropout(0.3))
-
 model.add(Dense(units=32, activation='relu'))
 model.add(Dense(units=1)) 
 
@@ -105,7 +92,8 @@ model.compile(optimizer=optimizer, loss='mean_squared_error')
 # ---------------------------------------------------------
 # 5. Callbacks y Entrenamiento
 # ---------------------------------------------------------
-model_filename = os.path.join(save_path, f'{ticker}_best_model_multi.keras')
+# CAMBIO IMPORTANTE: Extensión cambiada a .h5 para compatibilidad
+model_filename = os.path.join(save_path, f'{ticker}_best_model_multi.h5')
 
 callbacks = [
     EarlyStopping(monitor='val_loss', patience=6, verbose=1, restore_best_weights=True),
@@ -114,14 +102,15 @@ callbacks = [
 ]
 
 print("🚀 Iniciando entrenamiento multivariable (Local)...")
-# Nota: Si tienes GPU NVIDIA configurada, esto será rápido. Si es CPU, tardará más.
 history = model.fit(x_tr, y_tr,
                     batch_size=32,
-                    epochs=20, # Reduje a 20 para pruebas rápidas, puedes subirlo
+                    epochs=20,
                     validation_data=(x_val, y_val),
                     callbacks=callbacks)
 
-print(f"✅ Modelo guardado: {model_filename}")
+# Aseguramos el guardado final en formato H5 explícitamente
+model.save(model_filename)
+print(f"✅ Modelo guardado COMPATIBLE (H5): {model_filename}")
 
 # ---------------------------------------------------------
 # 6. Visualización y Predicción
@@ -133,13 +122,12 @@ plt.title('Error de Entrenamiento (Multivariable)')
 plt.legend()
 plt.show()
 
-# --- PREDICCIÓN CON SCALER MULTIVARIABLE ---
+# --- PREDICCIÓN DE PRUEBA ---
 last_sequence = scaled_data[-prediction_days:] 
 last_sequence = last_sequence.reshape(1, prediction_days, 5) 
 
 predicted_scaled_price = model.predict(last_sequence) 
 
-# Crear matriz dummy para des-escalar correctamente
 dummy_row = np.zeros((1, len(features)))
 dummy_row[0, target_col_index] = predicted_scaled_price[0][0]
 
