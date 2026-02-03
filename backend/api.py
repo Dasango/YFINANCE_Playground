@@ -262,6 +262,22 @@ async def update_cycle(model, scaler):
     
     while True:
         try:
+            # 0. AUTO-HEALING: Si no hay datos (porque falló el inicio), intentamos cargar
+            if global_state["df"] is None or global_state["df"].empty:
+                print(" ⚠️ Datos no inicializados. Intentando descargar datos iniciales...")
+                try:
+                    await init_data(scaler)
+                    # Si tuvimos éxito, también generamos las predicciones históricas iniciales
+                    df = global_state["df"]
+                    initial_preds = generate_past_predictions(model, scaler, df, count=2000)
+                    global_state["past_predictions"] = initial_preds
+                    print(" ✅ Recuperación exitosa. Sistema funcional.")
+                    continue # Reiniciamos el ciclo ya con datos
+                except Exception as e:
+                    print(f" ❌ Fallo al recuperar datos: {e}. Reintentando en 10s...")
+                    await asyncio.sleep(10)
+                    continue
+
             # Referencia al DF global
             df = global_state["df"]
             
@@ -337,7 +353,6 @@ async def update_cycle(model, scaler):
                     print("   ⚠️ Sin datos nuevos aún.")
             
             # --- ACTUALIZAR PREDICCIÓN LIVE (La que se guarda en memoria) ---
-            # --- ACTUALIZAR PREDICCIÓN LIVE (La que se guarda en memoria) ---
             # Si llegó un dato nuevo (o al inicio), calculamos su predicción "histórica" inmediata
             # para añadirla a la lista y mantener la gráfica continua.
             
@@ -409,20 +424,32 @@ async def update_cycle(model, scaler):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("--- INICIANDO SISTEMA (Modo Memoria) ---")
+    model, scaler = None, None
     try:
         model, scaler = load_resources()
-        
+    except Exception as e:
+        print(f"❌ Error fatal cargando modelo/scaler: {e}")
+        # Aquí sí podríamos parar si no hay modelo, pero si quieres que "arranque" igual:
+        # return # (El app iniciaría pero fallaría todo, mejor dejar que explote aquí si no hay archivos locales)
+        # Asumiremos que los archivos existen (el usuario dijo que el error era de 'docker', posiblemente red)
+    
+    # Intentamos carga inicial, pero NO matamos el app si falla
+    try:
         # 1. Cargar datos iniciales en memoria
         df = await init_data(scaler)
         
         # 2. Backtesting inicial (llenar past_predictions con los 2000 datos)
         initial_preds = generate_past_predictions(model, scaler, df, count=2000)
         global_state["past_predictions"] = initial_preds
-        
-        # 3. Arrancar ciclo de actualización
-        asyncio.create_task(update_cycle(model, scaler))
+        print("✅ Carga inicial completada correctamente.")
     except Exception as e:
-        print(f"Error crítico al iniciar: {e}")
+        print(f"⚠️ Alerta: Falló la carga inicial de datos ({e}). El sistema intentará recuperarse en segundo plano.")
+        # Dejamos global_state["df"] vacío, update_cycle lo detectará
+
+    # 3. Arrancar ciclo de actualización (siempre, para que pueda reintentar)
+    if model and scaler: # Solo si cargaron los recursos estáticos
+        asyncio.create_task(update_cycle(model, scaler))
+    
     yield
     print("--- APAGANDO SISTEMA ---")
 

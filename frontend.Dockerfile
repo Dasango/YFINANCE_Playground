@@ -10,6 +10,10 @@ RUN npm ci
 # Copiamos todo el código fuente
 COPY . .
 
+# Argumentos de construcción para Vite
+ARG VITE_FASTAPI_URL
+ENV VITE_FASTAPI_URL=$VITE_FASTAPI_URL
+
 # Construimos la aplicación para producción (genera carpeta 'dist')
 RUN npm run build
 
