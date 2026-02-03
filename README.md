@@ -1,7 +1,5 @@
 # YFinance Prediction Playground
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Python](https://img.shields.io/badge/python-3.8%2B-blue) ![React](https://img.shields.io/badge/react-18-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.95%2B-005571?logo=fastapi)
-
 ## Overview
 
 **YFinance Prediction Playground** is a professional-grade, real-time financial analytics dashboard designed to visualize and predict cryptocurrency market trends (BTC-USD).
@@ -38,6 +36,23 @@ The system is powered by a robust REST API. Below are the primary endpoints expo
 ## Getting Started
 
 Follow this guide to run the full stack (Backend + Frontend) locally.
+
+### Option 1: Using Docker (Recommended)
+
+The easiest way to run the application is using Docker. This ensures that both the frontend and backend run in a configured environment.
+
+1.  **Prerequisites**: Install [Docker Desktop](https://www.docker.com/products/docker-desktop).
+2.  **Start the App**:
+    ```bash
+    docker-compose up --build
+    ```
+3.  **Access**:
+    - **Frontend**: [http://localhost:3000](http://localhost:3000)
+    - **Backend API**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Option 2: Manual Setup
+
+If you prefer to run it manually (without Docker):
 
 ### Prerequisites
 
