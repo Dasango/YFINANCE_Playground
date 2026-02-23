@@ -113,5 +113,5 @@ npm run dev
 ---
 
 <div align="center">
-  <sub>Built with <3 by David for Financial Intelligence</sub>
+  <sub>Built with <3 by David</sub>
 </div>
